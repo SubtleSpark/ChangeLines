@@ -1,8 +1,8 @@
 package dev.subtlespark.changelines;
 
-import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ContentRevision;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 
@@ -18,6 +18,10 @@ import java.util.function.BiFunction;
 final class ChangeLinesRenderer implements TreeCellRenderer {
     final TreeCellRenderer delegate;
     private final BiFunction<Change, Boolean, LineStatsService.Result> statistics;
+    private static final SimpleTextAttributes ADDED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
+            JBColor.namedColor("ChangeLines.added", new JBColor(0x247A38, 0x73B97B)));
+    private static final SimpleTextAttributes REMOVED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
+            JBColor.namedColor("ChangeLines.removed", new JBColor(0xC62828, 0xE88989)));
 
     ChangeLinesRenderer(TreeCellRenderer delegate, BiFunction<Change, Boolean, LineStatsService.Result> statistics) {
         this.delegate = delegate;
@@ -36,11 +40,8 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
         if (label == null) return component; // A third-party renderer may not expose a compatible label.
         LineStatsService.Result result = statistics.apply(change, isVisibleRow(tree, row));
         if (result.state() == LineStatsService.State.READY) {
-            // Read the IDE's built-in VCS colors on every render, just like native file names.
-            // Do not cache RGB values or introduce plugin-specific theme keys. A null color
-            // inherits the label foreground; the native renderer owns selection contrast.
-            label.append("  +" + result.stats().added(), attributes(FileStatus.ADDED));
-            label.append("  -" + result.stats().removed(), attributes(FileStatus.DELETED));
+            label.append("  +" + result.stats().added(), ADDED);
+            label.append("  -" + result.stats().removed(), REMOVED);
         } else {
             String status = switch (result.state()) {
                 case LOADING -> "…";
@@ -52,10 +53,6 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
             label.append("  (" + status + ")", SimpleTextAttributes.GRAYED_ATTRIBUTES);
         }
         return component;
-    }
-
-    private static SimpleTextAttributes attributes(FileStatus status) {
-        return new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, status.getColor());
     }
 
     private static boolean isVisibleRow(JTree tree, int row) {

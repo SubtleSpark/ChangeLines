@@ -9,6 +9,7 @@ import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode;
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNodeRenderer;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 import com.intellij.testFramework.LightPlatformTestCase;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.vcsUtil.VcsUtil;
@@ -18,9 +19,9 @@ import javax.swing.UIManager;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.Color;
 
-/** Regression tests for native VCS palette, live UI theme changes, and selection behavior. */
+/** Regression tests for the original red/green palette and native selection behavior. */
 public final class ChangeLinesColorsTest extends LightPlatformTestCase {
-    public void testUsesNativeVcsColorsWithoutChangingFileNameOrFont() {
+    public void testOriginalPalettePreservesFileNameFontAndIcon() {
         Fixture fixture = fixture(false);
         var original = fixture.nativeRenderer();
         original.getTreeCellRendererComponent(fixture.tree(), fixture.node(), false, false, true, 0, false);
@@ -33,40 +34,29 @@ public final class ChangeLinesColorsTest extends LightPlatformTestCase {
         assertEquals(fileNameAttributes, attributes(rendered, "Colors.txt"));
         assertEquals(font, rendered.getFont());
         assertEquals(icon, rendered.getIcon());
-        assertEquals(FileStatus.ADDED.getColor(), attributes(rendered, "  +2").getFgColor());
-        assertEquals(FileStatus.DELETED.getColor(), attributes(rendered, "  -1").getFgColor());
+        assertOriginalPalette(rendered);
         assertEquals(SimpleTextAttributes.STYLE_PLAIN, attributes(rendered, "  +2").getStyle());
         assertEquals(SimpleTextAttributes.STYLE_PLAIN, attributes(rendered, "  -1").getStyle());
     }
 
-    public void testExistingRendererFollowsChangedUiThemeColors() {
-        // FileStatus uses UI theme colors first, then the scheme for the current UI theme.
-        // Changing only the global editor scheme is not a UI theme change.
+    public void testVcsFileStatusColorsDoNotReplaceOriginalPalette() {
         String addedKey = "VersionControl.FileStatus.ADDED";
         String deletedKey = "VersionControl.FileStatus.DELETED";
-        // Deliberately unusual test colors prove that the plugin does not force green/red.
         Color firstAdded = new Color(33, 66, 99);
         Color firstDeleted = new Color(111, 77, 44);
-        Color nextAdded = new Color(180, 170, 40);
-        Color nextDeleted = new Color(70, 160, 180);
         Fixture fixture = fixture(false);
         Object previousAdded = UIManager.put(addedKey, firstAdded);
         Object previousDeleted = UIManager.put(deletedKey, firstDeleted);
         try {
             assertEquals(firstAdded, FileStatus.ADDED.getColor());
             assertEquals(firstDeleted, FileStatus.DELETED.getColor());
-            var first = fixture.render(false);
-            assertEquals(firstAdded, attributes(first, "  +2").getFgColor());
-            assertEquals(firstDeleted, attributes(first, "  -1").getFgColor());
+            assertOriginalPalette(fixture.render(false));
 
-            UIManager.put(addedKey, nextAdded);
-            UIManager.put(deletedKey, nextDeleted);
-            var next = fixture.render(false);
-            assertEquals(nextAdded, attributes(next, "  +2").getFgColor());
-            assertEquals(nextDeleted, attributes(next, "  -1").getFgColor());
+            // A gray native Deleted color must not turn the minus count gray again.
+            UIManager.put(addedKey, new Color(180, 170, 40));
+            UIManager.put(deletedKey, new Color(128, 128, 128));
+            assertOriginalPalette(fixture.render(false));
         } finally {
-            // Restore the previous developer defaults, including absent keys, not a
-            // resolved LookAndFeel color that could mask future theme changes.
             UIManager.put(addedKey, previousAdded);
             UIManager.put(deletedKey, previousDeleted);
         }
@@ -78,9 +68,9 @@ public final class ChangeLinesColorsTest extends LightPlatformTestCase {
             var original = fixture.nativeRenderer();
             original.getTreeCellRendererComponent(fixture.tree(), fixture.node(), true, false, true, 0, focused);
             var fileNameAttributes = attributes(original, "Colors.txt");
-            // Ask the native renderer to apply its own selection policy to the same semantic colors.
-            original.append("native-added", new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, FileStatus.ADDED.getColor()));
-            original.append("native-deleted", new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, FileStatus.DELETED.getColor()));
+            // The native renderer remains responsible for selection contrast.
+            original.append("native-added", new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, addedColor()));
+            original.append("native-deleted", new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, removedColor()));
             var expectedAdded = attributes(original, "native-added");
             var expectedDeleted = attributes(original, "native-deleted");
 
@@ -89,6 +79,14 @@ public final class ChangeLinesColorsTest extends LightPlatformTestCase {
             assertEquals(expectedAdded, attributes(rendered, "  +2"));
             assertEquals(expectedDeleted, attributes(rendered, "  -1"));
         }
+    }
+
+    private static Color addedColor() { return new JBColor(0x247A38, 0x73B97B); }
+    private static Color removedColor() { return new JBColor(0xC62828, 0xE88989); }
+
+    private static void assertOriginalPalette(SimpleColoredComponent rendered) {
+        assertEquals(addedColor().getRGB(), attributes(rendered, "  +2").getFgColor().getRGB());
+        assertEquals(removedColor().getRGB(), attributes(rendered, "  -1").getFgColor().getRGB());
     }
 
     private Fixture fixture(boolean focused) {
