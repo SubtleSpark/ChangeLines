@@ -1,0 +1,15 @@
+<idea-plugin>
+    <id>dev.subtlespark.changelines</id>
+    <name>ChangeLines</name>
+    <vendor url="https://github.com/SubtleSpark">SubtleSpark</vendor>
+    <description><![CDATA[
+        Displays per-file added and removed line counts directly in native Changes trees,
+        including branch/revision comparisons, Git Log change lists, and local changes.
+        Revision loading and bounded line comparison run in the background.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>
+    </extensions>
+</idea-plugin>
