@@ -13,14 +13,16 @@ public final class ReviewFingerprint {
         final MessageDigest digest;
         try { digest = MessageDigest.getInstance("SHA-256"); }
         catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-        byte[] buffer = new byte[8192];
+        int longest = 1;
+        for (String field : fields) if (field != null) longest = Math.max(longest, field.length());
+        byte[] buffer = new byte[Math.min(4096, longest) * 2];
         for (String field : fields) {
             digest.update((byte) (field == null ? 0 : 1));
             if (field == null) continue;
             int length = field.length();
             for (int shift = 24; shift >= 0; shift -= 8) digest.update((byte) (length >>> shift));
-            // Preserve Java characters exactly, including a temporarily incomplete surrogate
-            // pair in an unsaved document, rather than replacing it during UTF-8 encoding.
+            // Preserve Java characters exactly, including incomplete surrogate pairs in
+            // unsaved documents, instead of replacing them during UTF-8 encoding.
             for (int start = 0; start < length;) {
                 if (Thread.currentThread().isInterrupted()) throw new CancellationException();
                 int end = Math.min(length, start + buffer.length / 2);

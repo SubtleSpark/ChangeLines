@@ -9,7 +9,6 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.JBUI;
 
 import javax.swing.JButton;
-import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
@@ -44,10 +43,11 @@ final class ReviewSession implements Disposable {
     private final String fixedScope;
     private final String temporaryScope = "temporary:" + UUID.randomUUID();
     private final Map<Change, Item> byChange = new IdentityHashMap<>();
-    // Keep only tiny immutable results while this tree exists. This avoids repeatedly
-    // evicting/reloading fingerprints when a review has more than 2,048 files.
+    // Keep only tiny immutable results while this tree exists, avoiding cache thrashing
+    // when a review contains more than the shared cache's 2,048 files.
     private final Map<Change, LineStatsService.Result> immutableResults = new IdentityHashMap<>();
     private List<Item> items = List.of();
+    private List<Change> changes = List.of();
     private String scope;
     private boolean dirty = true;
     private boolean disposed;
@@ -68,10 +68,10 @@ final class ReviewSession implements Disposable {
     ReviewSession(ChangesTree tree) { this(tree, null); }
 
     ReviewSession(ChangesTree tree, String fixedScope) {
-        this.treeReference = new WeakReference<>(tree);
-        this.project = tree.getProject();
-        this.statistics = project.getService(LineStatsService.class);
-        this.store = ApplicationManager.getApplication().getService(ReviewStore.class);
+        treeReference = new WeakReference<>(tree);
+        project = tree.getProject();
+        statistics = project.getService(LineStatsService.class);
+        store = ApplicationManager.getApplication().getService(ReviewStore.class);
         this.fixedScope = fixedScope;
         scope = temporaryScope;
         tree.putClientProperty(PROPERTY, this);
@@ -138,9 +138,7 @@ final class ReviewSession implements Disposable {
         syncModel();
         if (!isActive() || changes.isEmpty()) return false;
         boolean ready = true;
-        for (Change change : changes) {
-            ready &= byChange.containsKey(change) && statistics(change, true).fingerprint() != null;
-        }
+        for (Change change : changes) ready &= byChange.containsKey(change) && statistics(change, true).fingerprint() != null;
         return ready;
     }
 
@@ -155,8 +153,7 @@ final class ReviewSession implements Disposable {
 
     boolean mark(List<Change> changes) {
         if (!canMark(changes)) return false;
-        // Snapshot every selection before writing any approval. Never partially apply
-        // a multi-selection if a document was invalidated while the action was queued.
+        // Snapshot all selections before storing any approval: no partial multi-mark.
         List<String> fingerprints = new ArrayList<>();
         for (Change change : changes) {
             String fingerprint = statistics(change, false).fingerprint();
@@ -187,7 +184,6 @@ final class ReviewSession implements Disposable {
         for (int i = 0; i < items.size(); i++) if (items.get(i).change() == current) { start = i; break; }
         for (int step = 1; step <= items.size(); step++) {
             Change candidate = items.get((start + step) % items.size()).change();
-            // Loading or unavailable records are not treated as reviewed.
             if (status(candidate) != Status.REVIEWED) return candidate;
         }
         return null;
@@ -198,12 +194,15 @@ final class ReviewSession implements Disposable {
         ChangesTree tree = treeReference.get();
         Item item = byChange.get(change);
         if (!isActive() || tree == null || item == null) return;
+        String openingScope = scope;
         tree.expandPath(item.path().getParentPath());
         tree.setSelectionPath(item.path());
         tree.scrollPathToVisible(item.path());
-        // Reuse the tree's native Enter callback, preserving its Diff preview behavior.
+        // Reuse the native Enter callback, but do not act on a replacement Change
+        // merely because Change.equals() says it is the same file.
         SwingUtilities.invokeLater(() -> {
-            if (!isActive() || !selected().contains(change)) return;
+            if (!contains(change) || !openingScope.equals(scope())
+                    || selected().stream().noneMatch(selected -> selected == change)) return;
             var handler = tree.getEnterKeyHandler();
             if (handler != null) handler.process(new KeyEvent(tree, KeyEvent.KEY_PRESSED,
                     System.currentTimeMillis(), 0, KeyEvent.VK_ENTER, '\n'));
@@ -225,6 +224,10 @@ final class ReviewSession implements Disposable {
 
     void refresh() {
         if (!isActive()) return;
+        syncModel();
+        // A tree can become displayable before its ToolWindow content is registered.
+        // Resolve again on refresh, and also pick up native tab-title changes.
+        if (fixedScope == null) scope = ReviewScope.resolve(treeReference.get(), changes, temporaryScope);
         Progress progress = progress();
         for (Change change : selected()) statistics(change, true);
         String text = "已审阅 " + progress.reviewed() + " / " + progress.total();
@@ -233,7 +236,7 @@ final class ReviewSession implements Disposable {
         progressLabel.setText(text);
         progressLabel.setToolTipText(scope.startsWith("temporary:")
                 ? "无法确定此比较的稳定身份；本窗口使用临时审阅记录。"
-                : "本机保存进度；标记只对当前文件两侧内容有效。右键文件或点击审阅菜单进行操作。" );
+                : "本机保存进度；标记只对当前文件两侧内容有效。右键文件或点击审阅菜单进行操作。");
     }
 
     private void syncModel() {
@@ -256,9 +259,9 @@ final class ReviewSession implements Disposable {
             }
         }
         items = List.copyOf(current);
+        changes = items.stream().map(Item::change).toList();
         immutableResults.keySet().removeIf(change -> !byChange.containsKey(change));
-        scope = fixedScope != null ? fixedScope : ReviewScope.resolve(tree,
-                items.stream().map(Item::change).toList(), temporaryScope);
+        scope = fixedScope != null ? fixedScope : ReviewScope.resolve(tree, changes, temporaryScope);
     }
 
     private void observeModel() {
@@ -302,7 +305,9 @@ final class ReviewSession implements Disposable {
         if (scrollPane != null && scrollPane.getColumnHeader() != null && scrollPane.getColumnHeader().getView() == header) {
             scrollPane.setColumnHeaderView(previousHeader);
         }
+        store.releaseTemporaryScope(temporaryScope);
         items = List.of();
+        changes = List.of();
         byChange.clear();
         immutableResults.clear();
     }

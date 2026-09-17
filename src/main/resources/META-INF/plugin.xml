@@ -12,6 +12,7 @@
     <depends>com.intellij.modules.vcs</depends>
     <dependencies>
         <module name="intellij.platform.vcs.impl.shared"/>
+        <module name="intellij.platform.vcs.impl"/>
     </dependencies>
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>

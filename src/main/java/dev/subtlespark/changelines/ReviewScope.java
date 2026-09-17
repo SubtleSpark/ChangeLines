@@ -23,8 +23,8 @@ final class ReviewScope {
         var manager = ToolWindowManager.getInstance(tree.getProject());
         for (String id : manager.getToolWindowIds()) {
             var window = manager.getToolWindow(id);
-            if (window == null || !window.isVisible()
-                    || !SwingUtilities.isDescendingFrom(tree, window.getComponent())) continue;
+            // Hidden/auto-hidden windows still own the same comparison context.
+            if (window == null || !SwingUtilities.isDescendingFrom(tree, window.getComponent())) continue;
             windowId = id;
             for (Content content : window.getContentManager().getContents()) {
                 if (SwingUtilities.isDescendingFrom(tree, content.getComponent())) {
@@ -40,9 +40,8 @@ final class ReviewScope {
 
     static String resolve(String project, String treeType, String windowId, String title,
                           List<Change> changes, String temporaryScope) {
-        // The native Changes Between tool window keeps both compared ref names in the
-        // full tab title (the visual ellipsis does not truncate this property). A new
-        // commit on the same refs does not discard approvals for unchanged contents.
+        // The full native comparison title is not truncated by its visual ellipsis.
+        // New commits on the same refs do not discard marks for unchanged contents.
         if ("VcsChanges".equals(windowId) && title != null && !title.isBlank()) {
             return ReviewFingerprint.hash("ChangeLines.comparison.v1", project, windowId, title);
         }
@@ -50,17 +49,14 @@ final class ReviewScope {
         boolean known = false;
         boolean working = false;
         for (Change change : changes) {
-            ContentRevision before = change.getBeforeRevision();
-            ContentRevision after = change.getAfterRevision();
             working |= live(change);
-            String left = revision(before);
-            String right = revision(after);
+            String left = revision(change.getBeforeRevision());
+            String right = revision(change.getAfterRevision());
             known |= left != null && !left.equals("working") || right != null && !right.equals("working");
             revisions.add(ReviewFingerprint.hash(left, right));
         }
-        // Generic Git Log views reuse a tree for different commits. Include actual
-        // revisions, not just the tab title. Unknown third-party comparisons fail
-        // closed to a temporary, per-tree context rather than sharing approvals.
+        // Generic Git Log views reuse a tree for different commits. Unknown third-party
+        // comparisons fail closed to a temporary context instead of sharing approvals.
         if (!known && !working) return temporaryScope;
         return ReviewFingerprint.hash("ChangeLines.revisions.v1", project, treeType,
                 windowId, title, String.join(";", revisions));

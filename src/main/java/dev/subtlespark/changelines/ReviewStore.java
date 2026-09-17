@@ -19,7 +19,7 @@ public final class ReviewStore implements PersistentStateComponent<ReviewStore.D
     }
 
     private final Map<String, String> reviewed = new TreeMap<>();
-    private final Map<String, String> temporary = new TreeMap<>();
+    private final Map<String, Map<String, String>> temporary = new TreeMap<>();
 
     public synchronized String fingerprint(String scope, String file) {
         return records(scope).get(key(scope, file));
@@ -32,6 +32,10 @@ public final class ReviewStore implements PersistentStateComponent<ReviewStore.D
 
     public synchronized void unmark(String scope, String file) {
         records(scope).remove(key(scope, file));
+    }
+
+    synchronized void releaseTemporaryScope(String scope) {
+        temporary.remove(scope);
     }
 
     @Override public synchronized @NotNull Data getState() {
@@ -48,7 +52,7 @@ public final class ReviewStore implements PersistentStateComponent<ReviewStore.D
     }
 
     private Map<String, String> records(String scope) {
-        return scope.startsWith("temporary:") ? temporary : reviewed;
+        return scope.startsWith("temporary:") ? temporary.computeIfAbsent(scope, ignored -> new TreeMap<>()) : reviewed;
     }
 
     private static String key(String scope, String file) {

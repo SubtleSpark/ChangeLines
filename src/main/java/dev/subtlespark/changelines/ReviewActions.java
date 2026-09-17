@@ -10,6 +10,7 @@ import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ui.ChangesTree;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.JComponent;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
@@ -33,9 +34,15 @@ public final class ReviewActions {
 
     static void decoratePopup(JPopupMenu popup) {
         ReviewSession session = from(popup.getInvoker());
-        if (session == null || popup.getClientProperty("ChangeLines.reviewMenu") != null) return;
-        popup.putClientProperty("ChangeLines.reviewMenu", Boolean.TRUE);
+        if (session == null) return;
+        // Native popup instances can be cleared and reused. Check the actual child,
+        // not a flag on the popup that would survive removeAll().
+        for (Component child : popup.getComponents()) {
+            if (child instanceof JComponent component
+                    && Boolean.TRUE.equals(component.getClientProperty("ChangeLines.reviewMenu"))) return;
+        }
         JMenu review = new JMenu("ChangeLines 审阅");
+        review.putClientProperty("ChangeLines.reviewMenu", Boolean.TRUE);
         fill(review.getPopupMenu(), session);
         popup.addSeparator();
         popup.add(review);
