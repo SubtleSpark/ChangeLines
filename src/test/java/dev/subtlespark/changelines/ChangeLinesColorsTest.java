@@ -1,7 +1,5 @@
 package dev.subtlespark.changelines;
 
-import com.intellij.openapi.editor.colors.EditorColorsManager;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.openapi.vcs.changes.Change;
@@ -16,10 +14,11 @@ import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.vcsUtil.VcsUtil;
 
 import javax.swing.JTree;
+import javax.swing.UIManager;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.Color;
 
-/** Regression tests for native VCS palette, live scheme changes, and selection behavior. */
+/** Regression tests for native VCS palette, live UI theme changes, and selection behavior. */
 public final class ChangeLinesColorsTest extends LightPlatformTestCase {
     public void testUsesNativeVcsColorsWithoutChangingFileNameOrFont() {
         Fixture fixture = fixture(false);
@@ -40,34 +39,36 @@ public final class ChangeLinesColorsTest extends LightPlatformTestCase {
         assertEquals(SimpleTextAttributes.STYLE_PLAIN, attributes(rendered, "  -1").getStyle());
     }
 
-    public void testExistingRendererFollowsChangedVcsSchemeColors() {
-        EditorColorsManager manager = EditorColorsManager.getInstance();
-        EditorColorsScheme original = manager.getGlobalScheme();
-        EditorColorsScheme temporary = (EditorColorsScheme) original.clone();
-        temporary.setName("ChangeLines color regression test");
+    public void testExistingRendererFollowsChangedUiThemeColors() {
+        // FileStatus uses UI theme colors first, then the scheme for the current UI theme.
+        // Changing only the global editor scheme is not a UI theme change.
+        String addedKey = "VersionControl.FileStatus.ADDED";
+        String deletedKey = "VersionControl.FileStatus.DELETED";
         // Deliberately unusual test colors prove that the plugin does not force green/red.
         Color firstAdded = new Color(33, 66, 99);
         Color firstDeleted = new Color(111, 77, 44);
         Color nextAdded = new Color(180, 170, 40);
         Color nextDeleted = new Color(70, 160, 180);
         Fixture fixture = fixture(false);
+        Object previousAdded = UIManager.put(addedKey, firstAdded);
+        Object previousDeleted = UIManager.put(deletedKey, firstDeleted);
         try {
-            temporary.setColor(FileStatus.ADDED.getColorKey(), firstAdded);
-            temporary.setColor(FileStatus.DELETED.getColorKey(), firstDeleted);
-            manager.setGlobalScheme(temporary);
             assertEquals(firstAdded, FileStatus.ADDED.getColor());
             assertEquals(firstDeleted, FileStatus.DELETED.getColor());
             var first = fixture.render(false);
             assertEquals(firstAdded, attributes(first, "  +2").getFgColor());
             assertEquals(firstDeleted, attributes(first, "  -1").getFgColor());
 
-            temporary.setColor(FileStatus.ADDED.getColorKey(), nextAdded);
-            temporary.setColor(FileStatus.DELETED.getColorKey(), nextDeleted);
+            UIManager.put(addedKey, nextAdded);
+            UIManager.put(deletedKey, nextDeleted);
             var next = fixture.render(false);
             assertEquals(nextAdded, attributes(next, "  +2").getFgColor());
             assertEquals(nextDeleted, attributes(next, "  -1").getFgColor());
         } finally {
-            manager.setGlobalScheme(original);
+            // Restore the previous developer defaults, including absent keys, not a
+            // resolved LookAndFeel color that could mask future theme changes.
+            UIManager.put(addedKey, previousAdded);
+            UIManager.put(deletedKey, previousDeleted);
         }
     }
 
