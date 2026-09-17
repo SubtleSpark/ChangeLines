@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     java
@@ -17,6 +18,7 @@ dependencies {
     intellijPlatform {
         intellijIdea("2026.1")
         bundledModule("intellij.platform.vcs.impl.shared")
+        testFramework(TestFrameworkType.Platform)
     }
     testImplementation("junit:junit:4.13.2")
 }
@@ -35,7 +37,10 @@ intellijPlatform {
         }
     }
     pluginVerification {
-        ides { create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1") }
+        ides {
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1")
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2.0.1")
+        }
     }
 }
 
