@@ -11,7 +11,7 @@ ReleaseDAO.xml               +5   -1
 
 ## 下载和安装
 
-到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载 **ChangeLines-0.1.0.zip**。
+到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载 **ChangeLines-0.1.1.zip**。
 
 IDEA → **Settings → Plugins → 齿轮 → Install Plugin from Disk…** → 选择 ZIP → **重启 IDEA**。
 
@@ -24,6 +24,12 @@ IDEA → **Settings → Plugins → 齿轮 → Install Plugin from Disk…** →
 - 保留原有图标、勾选框、分组、文件状态颜色、双击 Diff 和快捷操作；不创建独立统计窗口。
 
 不覆盖未跟踪文件节点、Git staging 专用节点、远程开发前端的独立树实现，以及完全替换原生组件的第三方视图。
+
+## 颜色与主题
+
+文件名、字体、背景由原生 renderer 决定。自 0.1.1 起，行数统计不再定义 RGB 或插件专用主题色：`+新增` 复用 IDEA 的 `FileStatus.ADDED`，`-删除` 复用 `FileStatus.DELETED`，每次渲染读取当前 VCS 配色。选中行沿用原生树的对比度规则；状态未指定颜色时继承文字色。
+
+因此不保证每个主题都显示绿色/红色，例如原生删除色为灰色时，删除行数也会是灰色。可通过 IDEA 自带的 **Settings → Version Control → File Status Colors** 调整 Added / Deleted；插件不提供另一套独立配色。
 
 ## 统计规则和性能边界
 
@@ -42,13 +48,13 @@ IDEA → **Settings → Plugins → 齿轮 → Install Plugin from Disk…** →
 开发需要 JDK 21 和 Gradle 9.0.0；最终用户不需要这些工具。CI 固定使用该 Gradle 版本，仓库暂不包含 Gradle Wrapper。
 
 ```bash
-gradle test buildPlugin     # 编译、测试，生成 build/distributions/ChangeLines-0.1.0.zip
+gradle test buildPlugin     # 编译、测试，生成 build/distributions/ChangeLines-0.1.1.zip
 gradle verifyPlugin         # IDEA 2026.1 / 2026.2.0.1 二进制兼容性检查
 gradle runIde               # 启动安装了插件的沙箱 IDEA
 python3 scripts/check_distribution.py build/distributions
 ```
 
-测试包含统计边界场景、**5,000 组随机数据与独立 LCS 算法交叉校验**，以及运行在 IDEA 2026.1 平台上的服务加载、原生 ChangesTree 渲染、后台读取、跨对比缓存隔离、取消重试、二进制、读取失败和大文件保护测试。
+测试包含统计边界场景、**5,000 组随机数据与独立 LCS 算法交叉校验**，以及运行在 IDEA 2026.1 平台上的服务加载、原生 ChangesTree 渲染、后台读取、跨对比缓存隔离、取消重试、二进制、读取失败和大文件保护测试。颜色回归测试覆盖原生 VCS 配色、同一个 renderer 在配色修改后更新颜色，以及聚焦/未聚焦的选中行规则。
 
 平台集成测试不等同于各操作系统上的人工桌面验收。人工检查重点：历史版本对比不受当前工作区影响；滚动和刷新后数字不裁剪；本地未保存编辑更新；分组、勾选、双击 Diff 和明暗主题正常。
 
