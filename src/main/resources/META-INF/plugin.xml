@@ -3,9 +3,10 @@
     <name>ChangeLines</name>
     <vendor url="https://github.com/SubtleSpark">SubtleSpark</vendor>
     <description><![CDATA[
-        Displays per-file added and removed line counts directly in native Changes trees,
-        including branch/revision comparisons, Git Log change lists, and local changes.
-        Revision loading and bounded line comparison run in the background.
+        Displays added/removed line counts and explicit review progress in native Changes trees.
+        Review marks are saved locally, scoped to the comparison, and verified against both revision contents.
+        Includes multi-file marking and navigation to the next unreviewed file in the native Diff UI.
+        Revision loading, content fingerprints and bounded line comparison run in the background.
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
@@ -14,5 +15,12 @@
     </dependencies>
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>
+        <diff.DiffExtension implementation="dev.subtlespark.changelines.ReviewDiffExtension"/>
     </extensions>
+    <actions>
+        <action id="ChangeLines.MarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Mark" text="ChangeLines: 标记已审阅"/>
+        <action id="ChangeLines.UnmarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Unmark" text="ChangeLines: 取消已审阅"/>
+        <action id="ChangeLines.MarkAndNext" class="dev.subtlespark.changelines.ReviewActions$MarkNext" text="ChangeLines: 标记并打开下一个未审阅文件"/>
+        <action id="ChangeLines.NextUnreviewed" class="dev.subtlespark.changelines.ReviewActions$Next" text="ChangeLines: 打开下一个未审阅文件"/>
+    </actions>
 </idea-plugin>

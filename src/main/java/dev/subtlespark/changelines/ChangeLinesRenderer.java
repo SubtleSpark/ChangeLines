@@ -18,14 +18,21 @@ import java.util.function.BiFunction;
 final class ChangeLinesRenderer implements TreeCellRenderer {
     final TreeCellRenderer delegate;
     private final BiFunction<Change, Boolean, LineStatsService.Result> statistics;
+    private final BiFunction<Change, LineStatsService.Result, String> reviewSuffix;
     private static final SimpleTextAttributes ADDED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
             JBColor.namedColor("ChangeLines.added", new JBColor(0x247A38, 0x73B97B)));
     private static final SimpleTextAttributes REMOVED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
             JBColor.namedColor("ChangeLines.removed", new JBColor(0xC62828, 0xE88989)));
 
     ChangeLinesRenderer(TreeCellRenderer delegate, BiFunction<Change, Boolean, LineStatsService.Result> statistics) {
+        this(delegate, statistics, (change, result) -> "");
+    }
+
+    ChangeLinesRenderer(TreeCellRenderer delegate, BiFunction<Change, Boolean, LineStatsService.Result> statistics,
+                        BiFunction<Change, LineStatsService.Result, String> reviewSuffix) {
         this.delegate = delegate;
         this.statistics = statistics;
+        this.reviewSuffix = reviewSuffix;
     }
 
     @Override public Component getTreeCellRendererComponent(JTree tree, Object value, boolean selected,
@@ -37,7 +44,7 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
         ContentRevision revision = change.getAfterRevision() != null ? change.getAfterRevision() : change.getBeforeRevision();
         if (revision == null || revision.getFile().isDirectory()) return component;
         SimpleColoredComponent label = findLabel(component);
-        if (label == null) return component; // A third-party renderer may not expose a compatible label.
+        if (label == null) return component;
         LineStatsService.Result result = statistics.apply(change, isVisibleRow(tree, row));
         if (result.state() == LineStatsService.State.READY) {
             label.append("  +" + result.stats().added(), ADDED);
@@ -52,6 +59,8 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
             };
             label.append("  (" + status + ")", SimpleTextAttributes.GRAYED_ATTRIBUTES);
         }
+        String reviewed = reviewSuffix.apply(change, result);
+        if (!reviewed.isEmpty()) label.append("  " + reviewed, SimpleTextAttributes.GRAYED_ATTRIBUTES);
         return component;
     }
 

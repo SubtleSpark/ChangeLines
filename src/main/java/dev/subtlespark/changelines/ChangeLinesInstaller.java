@@ -1,9 +1,14 @@
 package dev.subtlespark.changelines;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionPopupMenu;
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
+import com.intellij.openapi.actionSystem.ex.ActionPopupMenuListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ui.ChangesTree;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -25,7 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Event-driven installation into native ChangesTree instances, not a separate tool window. */
 @Service(Service.Level.APP)
 public final class ChangeLinesInstaller implements Disposable {
-    // Weak values are important: a native inner renderer can hold its enclosing tree.
     private final Map<ChangesTree, WeakReference<Binding>> bindings = new WeakHashMap<>();
     private final AtomicBoolean refreshQueued = new AtomicBoolean();
     private final Timer refreshTimer = new Timer(150, event -> refreshTrees());
@@ -43,6 +47,13 @@ public final class ChangeLinesInstaller implements Disposable {
         if (disposed || started || ApplicationManager.getApplication().isHeadlessEnvironment()) return;
         started = true;
         Toolkit.getDefaultToolkit().addAWTEventListener(hierarchyListener, AWTEvent.HIERARCHY_EVENT_MASK);
+        // The callback runs after native menu items are populated, before showing it.
+        // Append our submenu without replacing any IDE/third-party context actions.
+        ActionManagerEx.getInstanceEx().addActionPopupMenuListener(new ActionPopupMenuListener() {
+            @Override public void actionPopupMenuCreated(@NotNull ActionPopupMenu menu) {
+                ReviewActions.decoratePopup(menu.getComponent());
+            }
+        }, this);
         for (Window window : Window.getWindows()) scan(window);
     }
 
@@ -58,7 +69,6 @@ public final class ChangeLinesInstaller implements Disposable {
                 || !(hierarchy.getSource() instanceof ChangesTree tree)) return;
         if ((hierarchy.getChangeFlags() & (HierarchyEvent.DISPLAYABILITY_CHANGED
                 | HierarchyEvent.SHOWING_CHANGED | HierarchyEvent.PARENT_CHANGED)) == 0) return;
-        // Do not replace a renderer in the middle of an IDE constructor or hierarchy mutation.
         WeakReference<ChangesTree> reference = new WeakReference<>(tree);
         SwingUtilities.invokeLater(() -> {
             ChangesTree current = reference.get();
@@ -68,10 +78,11 @@ public final class ChangeLinesInstaller implements Disposable {
         });
     }
 
-    private void attach(ChangesTree tree) {
+    void attach(ChangesTree tree) {
         if (disposed || tree.getProject().isDisposed() || tree.getProject().isDefault()) return;
-        WeakReference<Binding> existing = bindings.get(tree);
-        if (existing != null && existing.get() != null) return;
+        WeakReference<Binding> reference = bindings.get(tree);
+        Binding existing = reference == null ? null : reference.get();
+        if (existing != null) { existing.refresh(); return; }
         if (tree.getCellRenderer() == null) return;
         Binding binding = new Binding(tree);
         bindings.put(tree, new WeakReference<>(binding));
@@ -79,10 +90,21 @@ public final class ChangeLinesInstaller implements Disposable {
         binding.wrap();
     }
 
-    private void detach(ChangesTree tree) {
+    void detach(ChangesTree tree) {
         WeakReference<Binding> reference = bindings.remove(tree);
         Binding binding = reference == null ? null : reference.get();
         if (binding != null) binding.restore();
+    }
+
+    ReviewSession sessionFor(Change change) {
+        ReviewSession found = null;
+        for (WeakReference<Binding> reference : new ArrayList<>(bindings.values())) {
+            Binding binding = reference.get();
+            if (binding == null || !binding.reviews.contains(change)) continue;
+            if (found != null && !found.scope().equals(binding.reviews.scope())) return null;
+            found = binding.reviews;
+        }
+        return found;
     }
 
     public void requestRefresh() {
@@ -118,14 +140,14 @@ public final class ChangeLinesInstaller implements Disposable {
 
     private static final class Binding {
         private final WeakReference<ChangesTree> treeReference;
-        private final LineStatsService statistics;
+        private final ReviewSession reviews;
         private final PropertyChangeListener rendererListener;
         private ChangeLinesRenderer wrapper;
         private boolean updating;
 
         private Binding(ChangesTree tree) {
             treeReference = new WeakReference<>(tree);
-            statistics = tree.getProject().getService(LineStatsService.class);
+            reviews = new ReviewSession(tree);
             rendererListener = event -> { if (!updating) wrap(); };
         }
 
@@ -134,7 +156,7 @@ public final class ChangeLinesInstaller implements Disposable {
             if (tree == null || tree.getProject().isDisposed()) return;
             TreeCellRenderer current = tree.getCellRenderer();
             if (current == null || current instanceof ChangeLinesRenderer) return;
-            wrapper = new ChangeLinesRenderer(current, statistics::get);
+            wrapper = new ChangeLinesRenderer(current, reviews::statistics, reviews::suffix);
             updating = true;
             try { tree.setCellRenderer(wrapper); }
             finally { updating = false; }
@@ -144,8 +166,8 @@ public final class ChangeLinesInstaller implements Disposable {
             ChangesTree tree = treeReference.get();
             if (tree == null || !tree.isShowing() || tree.getProject().isDisposed()
                     || wrapper == null || tree.getCellRenderer() != wrapper) return;
-            // Repaint alone leaves Swing's cached row widths stale and clips the new suffix.
-            // Reinstalling the same delegate invalidates those widths without changing the model/selection.
+            reviews.refresh();
+            // Invalidate cached row widths without changing the model or selection.
             updating = true;
             try {
                 tree.setCellRenderer(null);
@@ -157,9 +179,11 @@ public final class ChangeLinesInstaller implements Disposable {
 
         private void restore() {
             ChangesTree tree = treeReference.get();
-            if (tree == null) return;
-            tree.removePropertyChangeListener("cellRenderer", rendererListener);
-            if (wrapper != null && tree.getCellRenderer() == wrapper) tree.setCellRenderer(wrapper.delegate);
+            if (tree != null) {
+                tree.removePropertyChangeListener("cellRenderer", rendererListener);
+                if (wrapper != null && tree.getCellRenderer() == wrapper) tree.setCellRenderer(wrapper.delegate);
+            }
+            reviews.dispose();
         }
     }
 }

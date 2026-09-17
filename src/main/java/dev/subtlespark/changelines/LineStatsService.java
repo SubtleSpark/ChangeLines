@@ -41,8 +41,9 @@ public final class LineStatsService implements Disposable {
     private static final long RETRY_NANOS = TimeUnit.SECONDS.toNanos(10);
 
     public enum State { READY, LOADING, BINARY, LIMITED, UNAVAILABLE }
-    public record Result(State state, LineDiff.Stats stats) {
-        static Result of(State state) { return new Result(state, null); }
+    public record Result(State state, LineDiff.Stats stats, String fingerprint) {
+        public Result(State state, LineDiff.Stats stats) { this(state, stats, null); }
+        static Result of(State state) { return new Result(state, null, null); }
     }
 
     private final Project project;
@@ -62,7 +63,6 @@ public final class LineStatsService implements Disposable {
             return thread;
         }, new ThreadPoolExecutor.AbortPolicy());
         workers.allowCoreThreadTimeOut(true);
-
         EditorFactory.getInstance().getEventMulticaster().addDocumentListener(new DocumentListener() {
             @Override public void documentChanged(@NotNull DocumentEvent event) { invalidateWorkingTree(); }
         }, this);
@@ -73,7 +73,7 @@ public final class LineStatsService implements Disposable {
         });
     }
 
-    private void invalidateWorkingTree() {
+    void invalidateWorkingTree() {
         workingGeneration.incrementAndGet();
         installer.requestRefresh();
     }
@@ -92,7 +92,6 @@ public final class LineStatsService implements Disposable {
             entry = null;
         }
         if (entry != null) return entry.result;
-
         if (!allowLoading) return Result.of(State.LOADING);
         Entry submitted = new Entry(generation, live);
         cache.put(key, submitted);
@@ -104,7 +103,7 @@ public final class LineStatsService implements Disposable {
         try {
             submitted.future = workers.submit(() -> calculate(key, submitted));
         } catch (RejectedExecutionException ignored) {
-            // Never run rejected work on the EDT; a completion repaint will retry visible rows.
+            // Never run rejected work on the EDT; a completion repaint retries visible rows.
             cache.remove(key);
         }
         return submitted.result;
@@ -114,6 +113,7 @@ public final class LineStatsService implements Disposable {
         try {
             ProgressManager.getInstance().runProcess(() -> {
                 Result result;
+                String fingerprint = null;
                 try {
                     Change change = key.change;
                     if (binary(change.getBeforeRevision()) || binary(change.getAfterRevision())) {
@@ -124,17 +124,23 @@ public final class LineStatsService implements Disposable {
                         if (before.indexOf('\0') >= 0 || after.indexOf('\0') >= 0) {
                             result = Result.of(State.BINARY);
                         } else {
+                            // Use the very same pair of revision contents as the line counts.
+                            // No source text is retained in review persistence.
+                            fingerprint = ReviewFingerprint.content(change.getBeforeRevision() == null ? null : before,
+                                    change.getAfterRevision() == null ? null : after);
+                            ProgressManager.checkCanceled();
                             LineDiff.Stats stats = LineDiff.calculate(before, after, () -> {
                                 ProgressManager.checkCanceled();
                                 if (Thread.currentThread().isInterrupted()) throw new CancellationException();
                             });
-                            result = new Result(State.READY, stats);
+                            result = new Result(State.READY, stats, fingerprint);
                         }
                     }
                 } catch (LineDiff.LimitExceededException ignored) {
-                    result = Result.of(State.LIMITED);
+                    // A work-limit failure may still have a safe, complete content hash.
+                    // A content-size failure never does.
+                    result = new Result(State.LIMITED, null, fingerprint);
                 } catch (CancellationException cancelled) {
-                    // Since 2026.1, ProcessCanceledException is also a CancellationException.
                     throw cancelled;
                 } catch (VcsException | RuntimeException failure) {
                     LOG.debug("ChangeLines could not load or compare revision content", failure);
@@ -165,7 +171,7 @@ public final class LineStatsService implements Disposable {
 
     private static String content(ContentRevision revision) throws VcsException {
         ProgressManager.checkCanceled();
-        if (revision == null) return ""; // Only a genuinely absent side means an empty file.
+        if (revision == null) return "";
         String text = revision.getContent();
         if (text == null) throw new VcsException("Revision content is unavailable");
         if (text.length() > LineDiff.MAX_CHARS) throw new LineDiff.LimitExceededException();
@@ -179,7 +185,6 @@ public final class LineStatsService implements Disposable {
         workers.shutdownNow();
     }
 
-    // Change.equals() does not identify a comparison: two tabs can contain the same file.
     private static final class IdentityKey {
         private final Change change;
         private IdentityKey(Change change) { this.change = change; }
