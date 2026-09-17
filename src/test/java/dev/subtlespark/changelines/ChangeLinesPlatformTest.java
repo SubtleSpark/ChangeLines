@@ -11,7 +11,7 @@ import com.intellij.openapi.vcs.changes.ui.ChangesBrowserChangeNode;
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode;
 import com.intellij.openapi.vcs.changes.ui.ChangesTree;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
-import com.intellij.platform.vcs.VcsUtil;
+import com.intellij.vcsUtil.VcsUtil;
 import com.intellij.testFramework.LightPlatformTestCase;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.util.ui.UIUtil;
