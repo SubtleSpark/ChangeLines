@@ -9,7 +9,6 @@ import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
-import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.VcsException;
@@ -134,7 +133,8 @@ public final class LineStatsService implements Disposable {
                     }
                 } catch (LineDiff.LimitExceededException ignored) {
                     result = Result.of(State.LIMITED);
-                } catch (ProcessCanceledException | CancellationException cancelled) {
+                } catch (CancellationException cancelled) {
+                    // Since 2026.1, ProcessCanceledException is also a CancellationException.
                     throw cancelled;
                 } catch (VcsException | RuntimeException failure) {
                     LOG.debug("ChangeLines could not load or compare revision content", failure);
@@ -150,7 +150,7 @@ public final class LineStatsService implements Disposable {
                     }
                 }
             }, entry.indicator);
-        } catch (ProcessCanceledException | CancellationException ignored) {
+        } catch (CancellationException ignored) {
             synchronized (this) {
                 if (cache.get(key) == entry) cache.remove(key);
             }

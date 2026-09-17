@@ -14,7 +14,10 @@ repositories {
 }
 
 dependencies {
-    intellijPlatform { intellijIdea("2026.1") }
+    intellijPlatform {
+        intellijIdea("2026.1")
+        bundledModule("intellij.platform.vcs.impl.shared")
+    }
     testImplementation("junit:junit:4.13.2")
 }
 

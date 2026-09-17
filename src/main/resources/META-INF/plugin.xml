@@ -1,4 +1,4 @@
-<idea-plugin>
+<idea-plugin require-restart="true">
     <id>dev.subtlespark.changelines</id>
     <name>ChangeLines</name>
     <vendor url="https://github.com/SubtleSpark">SubtleSpark</vendor>
@@ -9,6 +9,9 @@
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
+    <dependencies>
+        <module name="intellij.platform.vcs.impl.shared"/>
+    </dependencies>
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>
     </extensions>
