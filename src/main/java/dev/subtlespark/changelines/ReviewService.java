@@ -357,7 +357,7 @@ public final class ReviewService implements Disposable {
         String beforeRevision = revision(before);
         String signature = "change|" + beforeRevision + "|" + revision(after) + "|"
                 + normalizedPath + "|" + currentStamp(file) + "|" + change.getType();
-        String storeKey = root + "\u0000" + beforeRevision + "\u0000" + normalizedPath;
+        String storeKey = ReviewFingerprint.identity(root, normalizedPath, beforeRevision);
 
         Entry entry = new Entry(normalizedPath, storeKey, root, beforeRevision, signature,
                 file, change, false, deleted);
@@ -374,7 +374,7 @@ public final class ReviewService implements Disposable {
         if (next.containsKey(normalizedPath)) return;
         String root = vcsRoot(file);
         String signature = "unversioned|" + normalizedPath + "|" + currentStamp(file) + "|" + file.getLength();
-        String storeKey = root + "\u0000<unversioned>\u0000" + normalizedPath;
+        String storeKey = ReviewFingerprint.identity(root, normalizedPath, "<unversioned>");
         Entry entry = new Entry(normalizedPath, storeKey, root, "<unversioned>", signature,
                 file, null, true, false);
         reuse(previous.get(normalizedPath), entry);
