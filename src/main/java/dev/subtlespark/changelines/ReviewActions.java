@@ -119,7 +119,7 @@ public final class ReviewActions {
             ReviewService service = service(event);
             boolean visible = service != null && service.progress().changed() > 0;
             event.getPresentation().setVisible(visible);
-            event.getPresentation().setEnabled(visible && service.storedReviewCount() > 0);
+            event.getPresentation().setEnabled(visible && service.hasCurrentReviews());
         }
 
         @Override
