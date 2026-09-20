@@ -238,8 +238,8 @@ public final class ReviewService implements Disposable {
     }
 
     public void resetReviews() {
-        store.clearReviews();
         for (Entry entry : entries.values()) {
+            store.unmark(entry.storeKey);
             Computed computed = entry.computed;
             if (computed != null && computed.status() != ReviewStatus.UNREVIEWABLE) {
                 entry.computed = new Computed(computed.fingerprint(), computed.stats(),
@@ -247,6 +247,13 @@ public final class ReviewService implements Disposable {
             }
         }
         requestUiRefresh();
+    }
+
+    public boolean hasCurrentReviews() {
+        for (Entry entry : entries.values()) {
+            if (store.contains(entry.storeKey)) return true;
+        }
+        return false;
     }
 
     public boolean markAndOpenNext(@NotNull VirtualFile current) {
