@@ -3,25 +3,61 @@
     <name>ChangeLines</name>
     <vendor url="https://github.com/SubtleSpark">SubtleSpark</vendor>
     <description><![CDATA[
-        Displays added/removed line counts and explicit review progress in native Changes trees.
-        Review marks are saved locally, scoped to the comparison, and verified against both revision contents.
-        Includes multi-file marking and navigation to the next unreviewed file in the native Diff UI.
-        Revision loading, content fingerprints and bounded line comparison run in the background.
+        Adds review progress directly to IntelliJ IDEA Project View for local VCS changes.
+        Shows per-file added/removed line counts and review state, persists explicit review marks,
+        invalidates reviewed files when their content changes, and provides Review / Review & Next actions.
+        Uses Project View decorators, Action System, VCS/VFS APIs and project workspace state.
     ]]></description>
+
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
     <dependencies>
-        <module name="intellij.platform.vcs.impl.shared"/>
+        <module name="intellij.platform.lang.impl"/>
         <module name="intellij.platform.vcs.impl"/>
     </dependencies>
+
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>
-        <diff.DiffExtension implementation="dev.subtlespark.changelines.ReviewDiffExtension"/>
+        <projectViewNodeDecorator implementation="dev.subtlespark.changelines.ChangeLinesProjectViewDecorator"/>
     </extensions>
+
     <actions>
-        <action id="ChangeLines.MarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Mark" text="ChangeLines: 标记已审阅"/>
-        <action id="ChangeLines.UnmarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Unmark" text="ChangeLines: 取消已审阅"/>
-        <action id="ChangeLines.MarkAndNext" class="dev.subtlespark.changelines.ReviewActions$MarkNext" text="ChangeLines: 标记并打开下一个未审阅文件"/>
-        <action id="ChangeLines.NextUnreviewed" class="dev.subtlespark.changelines.ReviewActions$Next" text="ChangeLines: 打开下一个未审阅文件"/>
+        <group id="ChangeLines.ReviewGroup" text="ChangeLines 审阅" popup="true">
+            <action id="ChangeLines.MarkReviewed"
+                    class="dev.subtlespark.changelines.ReviewActions$Mark"
+                    text="标记已审阅"/>
+            <action id="ChangeLines.UnmarkReviewed"
+                    class="dev.subtlespark.changelines.ReviewActions$Unmark"
+                    text="取消已审阅"/>
+            <separator/>
+            <action id="ChangeLines.MarkAndNext"
+                    class="dev.subtlespark.changelines.ReviewActions$MarkNext"
+                    text="标记并打开下一个未审阅文件"/>
+            <action id="ChangeLines.NextUnreviewed"
+                    class="dev.subtlespark.changelines.ReviewActions$Next"
+                    text="打开下一个未审阅文件"/>
+            <separator/>
+            <action id="ChangeLines.ResetReviews"
+                    class="dev.subtlespark.changelines.ReviewActions$Reset"
+                    text="全部取消审阅"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
+        </group>
+
+        <action id="ChangeLines.Progress"
+                class="dev.subtlespark.changelines.ReviewActions$Progress"
+                text="审阅 0 / 0">
+            <add-to-group group-id="ProjectViewToolbar" anchor="first"/>
+        </action>
+        <action id="ChangeLines.ToolbarNext"
+                class="dev.subtlespark.changelines.ReviewActions$Next"
+                text="下一个未审阅">
+            <add-to-group group-id="ProjectViewToolbar" anchor="last"/>
+        </action>
+        <action id="ChangeLines.ToolbarReset"
+                class="dev.subtlespark.changelines.ReviewActions$Reset"
+                text="重置审阅">
+            <add-to-group group-id="ProjectViewToolbar" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>
