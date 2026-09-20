@@ -6,18 +6,18 @@ public final class ReviewStoreTest extends LightPlatformTestCase {
     public void testMarkUnmarkAndLoadState() {
         ReviewStore store = getProject().getService(ReviewStore.class);
         store.clearReviews();
-        store.mark("root\0A.java", "fp1");
-        assertEquals("fp1", store.fingerprint("root\0A.java"));
-        assertTrue(store.contains("root\0A.java"));
+        store.mark("key-a", "fp1");
+        assertEquals("fp1", store.fingerprint("key-a"));
+        assertTrue(store.contains("key-a"));
         assertEquals(1, store.size());
 
         ReviewStore.Data state = new ReviewStore.Data();
-        state.reviewed.put("root\0B.java", "fp2");
+        state.reviewed.put("key-b", "fp2");
         store.loadState(state);
-        assertNull(store.fingerprint("root\0A.java"));
-        assertEquals("fp2", store.fingerprint("root\0B.java"));
+        assertNull(store.fingerprint("key-a"));
+        assertEquals("fp2", store.fingerprint("key-b"));
 
-        store.unmark("root\0B.java");
-        assertFalse(store.contains("root\0B.java"));
+        store.unmark("key-b");
+        assertFalse(store.contains("key-b"));
     }
 }
