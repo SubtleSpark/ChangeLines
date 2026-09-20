@@ -301,10 +301,6 @@ public final class ReviewService implements Disposable {
         return new Progress(current.size(), reviewable, reviewed, needsReview, skipped, loading);
     }
 
-    public int storedReviewCount() {
-        return store.size();
-    }
-
     private void scheduleRefresh() {
         if (disposed || !started.get()) return;
         if (!refreshScheduled.compareAndSet(false, true)) return;
