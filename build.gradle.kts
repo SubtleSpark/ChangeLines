@@ -1,5 +1,6 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
     java
@@ -42,6 +43,13 @@ intellijPlatform {
             create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1")
             create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2.0.1")
         }
+        failureLevel = listOf(
+            FailureLevel.COMPATIBILITY_PROBLEMS,
+            FailureLevel.DEPRECATED_API_USAGES,
+            FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
+            FailureLevel.INTERNAL_API_USAGES,
+            FailureLevel.MISSING_DEPENDENCIES,
+        )
     }
 }
 
