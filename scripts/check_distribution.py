@@ -55,8 +55,10 @@ def check(directory: Path) -> str:
     idea = descriptor.find("idea-version")
     if idea is None or idea.get("since-build") != "261":
         raise ValueError("Minimum IDEA build must be 261 (2026.1)")
-    if descriptor.find("dependencies/module[@name='intellij.platform.vcs.impl.shared']") is None:
-        raise ValueError("Missing runtime dependency on the native VCS UI module")
+    dependencies = {node.get("name") for node in descriptor.findall("dependencies/module")}
+    required = {"intellij.platform.lang.impl", "intellij.platform.vcs.impl"}
+    if not required.issubset(dependencies):
+        raise ValueError(f"Missing runtime module dependencies: {sorted(required - dependencies)}")
     print(f"Validated {archive.name}: version {version}, IDEA 261+, {classes} production classes")
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as stream:

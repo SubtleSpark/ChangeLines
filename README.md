@@ -1,73 +1,136 @@
 # ChangeLines
 
-在 IntelliJ IDEA 原生 **Changes 文件树**中显示逐文件新增/删除行数，并保存 review 进度：
+ChangeLines 是一个面向个人使用的 IntelliJ IDEA 代码 Review 辅助插件。
+
+从 **0.3.0** 开始，插件不再修改 IDEA 的 Changes Tree renderer。核心入口改为 **Project View + IntelliJ Action System**：直接在项目树里看到本地变更的行数和审阅状态，用右键、工具栏或快捷键连续 Review。
+
+最低版本：**IntelliJ IDEA 2026.1（build 261）**。
+
+## 0.3.0 做了什么
+
+当前 Review Scope 是 **Local Changes + Unversioned Files**。
+
+Project View 中的变更文件会显示：
 
 ```text
-已审阅 1 / 3                          审阅
-ReleaseServiceImpl.java     +12  -3   已审阅
-ReleaseDAO.xml              +5   -1
-ReleaseFacadeImpl.java      +8   -2   需重审
+ReleaseDAO.java              +36 -39  ○
+ReleaseInstructionDAO.java   +24 -14  ✓
+ReleaseServiceImpl.java      +361 -20 !
+binary.dat                            ⊘
 ```
 
-最低版本 **IntelliJ IDEA 2026.1（261）**；Java 21、2026.1 SDK 构建，二进制兼容性检查覆盖 2026.1 和 2026.2.0.1。没有设置版本上限，不代表已经验证所有未来版本。
+状态：
 
-## 下载和安装
+- `○` 未审阅
+- `✓` 已审阅
+- `!` 已审阅后内容发生变化，需要重审
+- `⊘` 不可审阅，例如 binary、删除文件或无法安全读取内容
 
-到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载 **ChangeLines-0.2.0.zip**。
+`+新增/-删除` 保留原先 ChangeLines 的红绿配色。
 
-IDEA → **Settings → Plugins → 齿轮 → Install Plugin from Disk…** → 选择 ZIP → **重启 IDEA**。
+## Review 操作
 
-不要解压 ZIP，也不要选择 GitHub 自动生成的 Source code。已安装旧版时直接安装此包更新，无需另装 JDK 或 Gradle。尚未发布到 JetBrains Marketplace。
+Project View 右键 **ChangeLines 审阅**：
 
-## Review 用法
+- 标记已审阅
+- 取消已审阅
+- 标记并打开下一个未审阅文件
+- 打开下一个未审阅文件
+- 全部取消审阅
 
-在原来的 Changes 页面选择文件，右键 **ChangeLines 审阅**，或者点击列表顶部的 **审阅**：
+Project View 顶部还会显示：
 
-- **标记已审阅 / 取消已审阅**：支持多选文件，不自动包含只选中目录时的所有子文件。
-- **标记并打开下一个未审阅文件**：针对单个文件，标记后跳过已审阅项，展开目标目录并复用 IDEA 的原生 Diff 打开行为。
-- **打开下一个未审阅文件**：仅导航，不改变标记。到列表末尾时回到开头查找。
+```text
+审阅 7 / 40    下一个未审阅    重置审阅
+```
 
-树上只给已审阅、需重审或待核对的文件增加文字，不把整行变灰，也不把“打开过”当作“审阅完成”。顶部显示 **已审阅 N / M**，重新加载时待核对项不计入 N。
+其中 denominator 只面向可审阅/仍在计算的文件；不可审阅文件作为 skipped，不会让进度永远无法完成。鼠标悬停进度项可看到 changed / reviewable / needs-review / skipped 的明细。
 
-能通过实际 `Change` 对象明确关联到当前树的原生 Diff，会在工具栏增加“标记已审阅”和“标记并打开下一个”的按钮。Diff 按钮绑定的是显示中的文件，不能误标其他树当前选中的文件；来源关闭、模型换代或来源有歧义时禁用/不提供按钮，此时在树中操作即可。保留 IDEA 原生的预览/独立窗口行为。
+所有 Action 都可在 **Settings → Keymap** 搜索 `ChangeLines` 后绑定快捷键。默认不抢占 IDEA 现有快捷键。
 
-**Settings → Keymap** 搜索 `ChangeLines`，可为树上的四个动作设置快捷键；默认不占用快捷键。标记只记录阅读进度，不代表审批通过。
+### 连续 Review
 
-## 审阅记录怎样保存
+推荐把 **标记并打开下一个未审阅文件** 绑定到一个顺手的快捷键：
 
-使用 IDEA 的 `PersistentStateComponent` 保存到 **IDEA 配置目录**的 `options/ChangeLinesReviews.xml`，不是 `.idea` 文件，不修改 Git 仓库，也不参与 Settings Sync。只保存标识与内容哈希，不保存源代码。
+```text
+看 Diff
+  ↓
+确认无问题
+  ↓
+Mark Reviewed & Next
+  ↓
+自动打开下一个
+```
 
-记录绑定 **比较上下文 + 左右文件路径 + 左右内容 SHA-256**，不是仅按文件名或 `+N -N` 记忆。
+对于普通 Local Change，插件调用 IDEA 原生 Diff；Unversioned 文件没有 before revision，因此直接打开文件编辑器。
 
-主要目标 **Changes Between…** 使用项目路径和完整原生对比标签标题作为上下文：同一组分支再次比较、重开窗口或重启 IDEA 后，可恢复进度；分支提交更新但某文件两侧内容完全没变时继续保留标记，任一侧变化就显示 **需重审**。重新标记前会核对当前内容；多选中有任一文件无法核对时不部分写入标记。
+## 审阅状态为什么可信
 
-普通 Git Log 复用树但切换提交，因此另外使用实际 revision 组合隔离记录。普通本地 Changes 也单独隔离；基线 revision 改变时可能新建记录，不保证跨提交保留。无法确定身份的第三方比较只使用窗口级临时记录，不猜测归属。完整对比标题变化（包括界面语言变化）会被视为新上下文。内容回到已确认的完全相同版本时，该版本仍可视为已审阅。
+审阅状态不是 `path -> reviewed=true`。
 
-**首版边界**：二进制、无法读取、超过单侧内容大小限制的文件不能标记，但仍计入总文件数；此时进度不一定能达到 M/M。没有评论、审批、团队共享或云同步功能。
+每次标记时保存的是：
 
-## 支持范围与颜色
+```text
+VCS root
++ 当前路径
++ before revision
++ before content
++ after content
+        ↓
+      SHA-256
+```
 
-主要支持 **Changes Between…** 分支/标签/提交对比，及使用原生 `ChangesTree`、以 `Change` 为文件节点的本地 Changes 和 Git Log 文件列表。保留图标、勾选框、分组、文件状态色、双击 Diff 和快捷操作，不新增工具窗口。
+如果已审阅文件继续被编辑，插件会立即显示 `!`，后台重新计算后再确认状态。切分支、baseline 变化或文件内容变化都会让旧 fingerprint 不再匹配，不会错误保留 Reviewed。
 
-不覆盖未跟踪文件节点、Git staging 专用节点、远程开发前端的独立树，以及完全替换原生组件的第三方视图。
+状态保存在当前项目的 IDEA workspace state 中，不写入源码，不需要团队共享，也不会主动执行 Git 命令。
 
-行数沿用 0.1.0 / 0.1.2 的 **新增绿色、删除红色** 与明暗主题适配，不增加配色模式。文件名、字体、图标、背景和选中样式由原生 renderer 决定。审阅状态使用 IDEA 原生的辅助文字样式。
+## Unversioned / Binary / Deleted
 
-## 统计与性能边界
+- Unversioned 文件会合并到 Review Scope；若 ChangeListManager 返回目录，会递归收集其中未被 ignore 的文件。
+- Binary、无法读取或超过保护大小的文件标记为 `⊘` 并跳过。
+- Deleted file 没有 Project View 文件节点，因此当前版本将其计为 skipped，不尝试 hack Project Tree 来伪造节点。
 
-每个节点读取自身 `Change.beforeRevision` / `afterRevision`，不用当前分支的 git diff 代替历史对比。同名文件不同对比独立计算。
+## 为什么不做“行尾独立可点击按钮”
 
-修改一行计为 `+1 -1`；新增 `+N -0`，删除 `+0 -N`；空文件为零行，纯重命名 `+0 -0`。空白修改计入统计，CRLF/CR 转 LF 后比较，末行是否有换行符会影响统计。最短插入/删除序列可能与 Git 对复杂重复文本的启发式结果不同。审阅指纹则使用未归一化的完整两侧内容，保守识别变化。
+JetBrains 对 Project View 提供稳定的 `ProjectViewNodeDecorator`，适合显示附加文本/状态；但没有稳定公开的“给某一行尾部增加独立 click target”扩展点。
 
-`binary`、`too large`、`unavailable` 分别表示二进制、超限、读取失败，不伪装成零行。
+0.3.0 因此只使用：
 
-读取、统计、指纹在后台完成。每项目 2 个计算线程、256 个排队任务、2,048 条统计缓存。可见行、选中的文件，以及恢复进度时曾标记的文件按需计算；未审阅且不可见的文件不为统计进度而全量读取。每个活动比较还保存微小的不可变结果，防止大比较反复淘汰指纹；关闭树时释放。
+- `ProjectViewNodeDecorator`
+- Action System
+- VCS `ChangeListManager`
+- VFS / Document listeners
+- `PersistentStateComponent`
 
-单侧最多 2,000,000 字符、100,000 行，并限制比较工作量。只有比较工作量超限但完整指纹已生成时，仍可标记。VCS 历史内容加载后才能检查长度，读取阶段不是严格内存上限。本地编辑/VFS 变化会使工作区统计失效；关闭项目取消后台任务。无遥测，不上传代码。
+不再通过 AWT 层级监听包装 Project Tree / Changes Tree renderer，也不注入自定义鼠标命中逻辑。
 
-## 开发、验证与发布
+## 与 0.2.x 的区别
 
-开发需要 JDK 21、Gradle 9.0.0；CI 固定版本，暂未包含 Gradle Wrapper。
+0.2.x 主要增强 **Changes Between / Changes Tree**。0.3.0 是一次主动重构，目标是更稳定的 IDEA 2026+ API 边界，因此删除了旧的 Changes Tree renderer 和 Diff UI 注入实现。
+
+如果你的主要场景仍然是“任意两个历史 revision 的 Changes Between”，0.2.x Release 仍可安装；0.3.0 当前主攻 **本地尚未提交修改的连续 Review**。
+
+## 性能
+
+- VCS/VFS 事件触发后台刷新，不轮询。
+- 2 个后台线程计算内容 fingerprint 和行数。
+- Project View decorator 和 Action `update()` 只读取缓存，不做 diff / 文件 IO。
+- 单侧文本保护上限 2,000,000 字符；Unversioned 在加载前还有 4 MB 快速保护。
+- Myers 行级 diff 仍有工作量上限；即使复杂 diff 超限，只要 fingerprint 已生成，文件仍可以审阅，只是不显示 `+/-`。
+
+## 安装
+
+到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载最新版 ZIP。
+
+IDEA：
+
+**Settings → Plugins → 齿轮 → Install Plugin from Disk… → 选择 ZIP → 重启**
+
+不要解压 ZIP，也不要下载 GitHub 自动生成的 Source code。
+
+## 开发
+
+需要 JDK 21、Gradle 9.0.0。
 
 ```bash
 gradle test buildPlugin
@@ -76,10 +139,14 @@ gradle runIde
 python3 scripts/check_distribution.py build/distributions
 ```
 
-测试覆盖 5,000 组随机 LCS 交叉校验与统计边界、IDEA 服务/原生树、配色、XML 持久化、左右内容指纹、跨比较隔离、多选、内容变化、导航、Diff 绑定及清理。自动化平台测试不等同于每个操作系统上的人工界面验收。
+CI 对 IDEA 2026.1 和 2026.2.0.1 做 Plugin Verifier 检查，并验证最终 ZIP 结构。
 
-普通 push / PR 执行测试、二进制兼容性检查和 ZIP 检查。更新 version、本文文件名及 `RELEASE_NOTES.md` 后，向 main 提交带 **[release]** 的 commit，或手动运行工作流勾选 publish。全部检查成功后从同一次构建获取 ZIP，生成 SHA-256 并发布 GitHub Release，不覆盖既有 release。构建使用 contents: read，发布仅使用仓库 GITHUB_TOKEN 的 contents: write。
+## 当前明确不做
 
-实现使用 AWT 层级事件发现原生树、包装 renderer，并利用公开的菜单通知和 Diff 扩展 API；不反射访问私有字段，不替换树模型。UI 集成需要随 IDEA 更新进行回归。
+- 原生 Project View 行尾独立可点击 icon
+- 伪造 deleted file 的 Project View 节点
+- 评论、审批、团队同步
+- Split Mode / Remote Development 专门架构
+- 为旧 IDEA 保留兼容层
 
-参考：[平台插件 SDK](https://plugins.jetbrains.com/docs/intellij/)、[状态持久化](https://plugins.jetbrains.com/docs/intellij/persisting-state-of-components.html)、[2026.1 ChangesTree](https://github.com/JetBrains/intellij-community/blob/261/platform/vcs-impl/shared/src/com/intellij/openapi/vcs/changes/ui/ChangesTree.java)。
+这是个人工具项目，优先保持实现简单、状态可信和升级成本低。

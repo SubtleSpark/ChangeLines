@@ -1,31 +1,28 @@
-## 0.2.0：记录文件审阅进度
+## 0.3.0：Project View Review 重构
 
-在原生 Changes 文件树中记录哪些文件已经 review，不改变 0.1.2 的红绿行数配色。
+这版按照调研结果重写 Review 主链路，删除 0.2.x 中对 Changes Tree renderer、AWT hierarchy 和 Diff UI 的注入。
 
-- 文件右键 → **ChangeLines 审阅** → 标记 / 取消已审阅，支持多选文件。
-- 列表顶部显示 **已审阅 N / M**，也可通过顶部 **审阅** 菜单操作。
-- **标记并打开下一个未审阅文件**：复用原生 Diff 打开行为，并跳过已审阅项；折叠目录中的文件也会被找到。
-- 对于能关联到当前比较树的原生 Diff，工具栏提供审阅按钮。标记绑定该 Diff 的实际文件，不会误标其他窗口选中的文件。
-- 不会因打开文件自动标记。记录的是审阅进度，不是审批通过。
+### 新入口
 
-### 保存与失效
+- Project View 直接显示本地变更的 `+新增/-删除`。
+- 四态审阅：`○ 未审阅 / ✓ 已审阅 / ! 需重审 / ⊘ 不可审阅`。
+- Local Changes 与 Unversioned Files 合并为 Review Scope。
+- 已审阅文件再次变化会立即进入“需重审”，后台 fingerprint 会再次核实。
+- Project View 右键提供 Mark / Unmark / Mark & Next / Next / Reset。
+- Project View 顶部显示审阅进度，并提供 Next / Reset。
+- 普通 Local Change 使用 IDEA 原生 Diff，Unversioned 直接打开编辑器。
 
-记录保存在 IDEA 配置目录的 `options/ChangeLinesReviews.xml`，不在项目仓库中，不通过 Settings Sync 同步，只保存哈希、不保存源代码内容。
+### 状态保存
 
-主目标 **Changes Between…** 根据项目和完整对比标题区分记录。同一对比重开/重启后恢复进度；相同分支对比更新后，左右内容均未改变的文件保留标记，任一侧内容改变显示 **需重审**。未核对完的记录不会计入已审阅进度。
+审阅记录保存在项目 workspace state。记录的是 VCS root、路径、before revision 与左右内容共同生成的 SHA-256 fingerprint，不是简单的 path 布尔值。
 
-普通 Git Log 使用实际 revision 区分记录。无法确定稳定比较身份的第三方视图只提供临时记录；提示见进度文字。对比标题或 IDE 界面语言变化可能产生新的记录。首版只支持能够安全读取并计算完整内容指纹的文本文件；二进制、读取失败或超过内容大小限制的文件不可标记，仍列入总文件数。
+切分支、baseline 或内容发生变化时，旧 Reviewed 不会错误沿用。
 
-### 安装 / 更新
+### 边界
 
-下载 **ChangeLines-0.2.0.zip**（不要解压，不是 Source code）。
+- Binary、读取失败和超出保护大小的文件作为 skipped。
+- Deleted file 因没有 Project View 节点也作为 skipped。
+- 不实现原生 Project View 行尾独立 clickable button；该能力没有稳定公开扩展点。
+- 0.3.0 主攻 Local Changes Review；任意历史 revision 的 Changes Between 仍可使用 0.2.x。
 
-IDEA → Settings → Plugins → 齿轮 → Install Plugin from Disk… → 选择 ZIP → 重启。最低 **IDEA 2026.1（261）**，无需另装 Java / Gradle。
-
-可在 Settings → Keymap 搜索 `ChangeLines` 为树上的四个审阅操作绑定快捷键；默认不抢占已有快捷键。
-
-### 验证
-
-发布由统计测试、原生 IDEA 平台/颜色/审阅测试、2026.1 / 2026.2.0.1 二进制兼容性检查及 ZIP 结构检查共同把关；附件来自同一次通过验证的构建，附 SHA256SUMS。
-
-自动化平台测试不等同于 macOS 实机人工界面验收。未覆盖未跟踪文件节点、Git staging 专用视图和远程开发前端的独立树。
+最低 IntelliJ IDEA 2026.1（261）。
