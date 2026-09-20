@@ -8,6 +8,10 @@ import java.util.HexFormat;
 final class ReviewFingerprint {
     private ReviewFingerprint() {}
 
+    static String identity(String vcsRoot, String currentPath, String beforeRevision) {
+        return calculate(vcsRoot, currentPath, beforeRevision, "", "");
+    }
+
     static String calculate(String vcsRoot,
                             String currentPath,
                             String beforeRevision,
