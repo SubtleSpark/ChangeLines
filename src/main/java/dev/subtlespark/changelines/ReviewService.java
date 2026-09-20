@@ -1,6 +1,5 @@
 package dev.subtlespark.changelines;
 
-import com.intellij.diff.util.DiffUtil;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
@@ -464,7 +463,7 @@ public final class ReviewService implements Disposable {
         if (file.getLength() > MAX_UNVERSIONED_BYTES) {
             throw new IllegalArgumentException("File too large");
         }
-        return ReadAction.compute(() -> {
+        return ReadAction.nonBlocking(() -> {
             Document document = FileDocumentManager.getInstance().getCachedDocument(file);
             if (document != null) return document.getText();
             try {
@@ -472,7 +471,7 @@ public final class ReviewService implements Disposable {
             } catch (IOException failure) {
                 throw new IllegalStateException(failure);
             }
-        });
+        }).expireWith(this).executeSynchronously();
     }
 
     private static String revisionText(@Nullable ContentRevision revision) throws VcsException {
