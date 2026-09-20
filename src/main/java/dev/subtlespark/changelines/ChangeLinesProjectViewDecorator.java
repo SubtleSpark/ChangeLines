@@ -7,6 +7,7 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleTextAttributes;
 import org.jetbrains.annotations.NotNull;
@@ -30,6 +31,10 @@ public final class ChangeLinesProjectViewDecorator implements ProjectViewNodeDec
     @Override
     public void decorate(@NotNull ProjectViewNode<?> node, @NotNull PresentationData data) {
         Project project = node.getProject();
+        Object value = node.getValue();
+        // Decorate actual file rows only. Java/member nodes may point at the same
+        // VirtualFile and must not duplicate a file's review state.
+        if (!(value instanceof PsiFile) && !(value instanceof VirtualFile)) return;
         VirtualFile file = node.getVirtualFile();
         if (project == null || file == null || file.isDirectory() || !file.isValid()) return;
 
