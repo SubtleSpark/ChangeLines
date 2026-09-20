@@ -38,6 +38,11 @@ public final class ReviewActions {
         public @NotNull ActionUpdateThread getActionUpdateThread() {
             return ActionUpdateThread.BGT;
         }
+
+        @Override
+        public boolean displayTextInToolbar() {
+            return true;
+        }
     }
 
     public static final class Mark extends Base {
