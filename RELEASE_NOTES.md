@@ -1,28 +1,25 @@
-## 0.3.0：Project View Review 重构
+## 0.3.1：修复 Changes Between 中完全不生效的问题
 
-这版按照调研结果重写 Review 主链路，删除 0.2.x 中对 Changes Tree renderer、AWT hierarchy 和 Diff UI 的注入。
+0.3.0 把功能误迁移到了 Project View / Local Changes，删除了真正目标 Changes Between 的集成。**这是插件回退，不需要调整用户设置。**
 
-### 新入口
+### 修复
 
-- Project View 直接显示本地变更的 `+新增/-删除`。
-- 四态审阅：`○ 未审阅 / ✓ 已审阅 / ! 需重审 / ⊘ 不可审阅`。
-- Local Changes 与 Unversioned Files 合并为 Review Scope。
-- 已审阅文件再次变化会立即进入“需重审”，后台 fingerprint 会再次核实。
-- Project View 右键提供 Mark / Unmark / Mark & Next / Next / Reset。
-- Project View 顶部显示审阅进度，并提供 Next / Reset。
-- 普通 Local Change 使用 IDEA 原生 Diff，Unversioned 直接打开编辑器。
+- 恢复原生 Changes Between 比较树的逐文件 `+新增 / -删除` 和审阅状态；工作区干净时同样生效。
+- 使用当前比较的左右 revision，而不是当前工作区的改动。删除、重命名文件保留在比较中。
+- 文件列表的原生工具栏可直接标记、取消、审阅并下一个；无需手写直角右键弹层。
+- 原生 Diff 的动作绑定实际显示的文件，切到别的文件或模型失效后不会误标。
+- 不可审阅文件从进度分母排除，并在连续导航中跳过。待核对文件不算已审阅。
+- 恢复本机、比较级完整内容指纹校验；本地修改后不允许确认过期指纹。
+- 增加真实 VcsChanges 窗口 + Native ChangesBrowser + 无本地修改的回归测试，防止再次只测插件加载而漏掉目标入口。
 
-### 状态保存
+### 安装
 
-审阅记录保存在项目 workspace state。记录的是 VCS root、路径、before revision 与左右内容共同生成的 SHA-256 fingerprint，不是简单的 path 布尔值。
+下载 **ChangeLines-0.3.1.zip**，无需解压：Settings → Plugins → 齿轮 → Install Plugin from Disk… → 重启。
 
-切分支、baseline 或内容发生变化时，旧 Reviewed 不会错误沿用。
+最低 **IDEA 2026.1（261）**。CI 验证 2026.1 / 2026.2.0.1，附件来自同次通过验证的构建，附 SHA256SUMS。
 
 ### 边界
 
-- Binary、读取失败和超出保护大小的文件作为 skipped。
-- Deleted file 因没有 Project View 节点也作为 skipped。
-- 不实现原生 Project View 行尾独立 clickable button；该能力没有稳定公开扩展点。
-- 0.3.0 主攻 Local Changes Review；任意历史 revision 的 Changes Between 仍可使用 0.2.x。
+没有实现原生树行尾独立可点击图标。0.3.1 撤回 0.3.0 的 Project View-only 工作流；0.2.x 已保存的相同比较记录可继续读取，0.3.0 的本地工作区标记不混入历史比较。
 
-最低 IntelliJ IDEA 2026.1（261）。
+原生 toolbar / popup 外观由 IDEA 和主题决定。自动化平台验收不等同于 macOS 实机人工外观验收。未跟踪文件专用节点、staging 专用视图和 Remote Development 前端尚不支持。

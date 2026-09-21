@@ -1,157 +1,197 @@
 package dev.subtlespark.changelines;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.project.DumbAwareAction;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.vcs.changes.Change;
+import com.intellij.openapi.vcs.changes.ui.ChangesTree;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.Arrays;
+import javax.swing.SwingUtilities;
+import java.awt.Component;
+import java.lang.ref.WeakReference;
 import java.util.List;
 
+/** Every menu/toolbar uses the Action System. No hand-built Swing popup menus. */
 public final class ReviewActions {
     private ReviewActions() {}
+    enum Kind { MARK, UNMARK, MARK_NEXT, NEXT, TOGGLE, RESET }
 
-    private static @NotNull List<VirtualFile> files(@NotNull AnActionEvent event) {
-        VirtualFile[] array = event.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY);
-        if (array == null || array.length == 0) {
-            VirtualFile file = event.getData(CommonDataKeys.VIRTUAL_FILE);
-            array = file == null ? VirtualFile.EMPTY_ARRAY : new VirtualFile[]{file};
-        }
-        List<VirtualFile> result = new ArrayList<>();
-        Arrays.stream(array)
-                .filter(file -> file != null && file.isValid() && !file.isDirectory())
-                .forEach(result::add);
-        return result;
+    static ReviewSession from(Component component) {
+        if (component == null) return null;
+        ChangesTree tree = component instanceof ChangesTree t ? t
+                : (ChangesTree) SwingUtilities.getAncestorOfClass(ChangesTree.class, component);
+        if (tree == null || !(tree.getClientProperty(ReviewSession.PROPERTY) instanceof ReviewSession session)) return null;
+        return session.isActive() ? session : null;
     }
 
-    private static ReviewService service(@NotNull AnActionEvent event) {
-        Project project = event.getProject();
-        return project == null ? null : project.getService(ReviewService.class);
+    static DefaultActionGroup toolbarGroup(ReviewSession session) {
+        DefaultActionGroup group = new DefaultActionGroup();
+        group.add(new ProgressAction(session));
+        group.add(new SessionAction(session, Kind.TOGGLE));
+        group.add(new SessionAction(session, Kind.MARK_NEXT));
+        group.add(new SessionAction(session, Kind.NEXT));
+        DefaultActionGroup more = new DefaultActionGroup("审阅", true);
+        more.getTemplatePresentation().putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, true);
+        more.add(new SessionAction(session, Kind.MARK));
+        more.add(new SessionAction(session, Kind.UNMARK));
+        more.addSeparator();
+        more.add(new SessionAction(session, Kind.RESET));
+        group.add(more);
+        return group;
     }
 
-    private abstract static class Base extends DumbAwareAction {
-        Base() {
-            getTemplatePresentation().putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, true);
-        }
-
-        @Override
-        public @NotNull ActionUpdateThread getActionUpdateThread() {
-            return ActionUpdateThread.BGT;
-        }
+    static boolean enabled(ReviewSession session, List<Change> selected, Kind kind) {
+        if (!session.isActive()) return false;
+        return switch (kind) {
+            case MARK -> session.canMark(selected);
+            case UNMARK -> session.hasMarks(selected);
+            case MARK_NEXT -> selected.size() == 1 && session.canMark(selected);
+            case NEXT -> session.nextAfter(selected.isEmpty() ? null : selected.getLast()) != null;
+            case TOGGLE -> !selected.isEmpty() && (allReviewed(session, selected) || session.canMark(selected));
+            case RESET -> session.hasMarks(session.changes());
+        };
     }
 
-    public static final class Mark extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            List<VirtualFile> files = files(event);
-            boolean tracked = service != null && files.stream().anyMatch(service::isTracked);
-            event.getPresentation().setVisible(tracked);
-            event.getPresentation().setEnabled(tracked && service.canMark(files));
-        }
-
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            if (service != null) service.markReviewed(files(event));
-        }
+    private static boolean allReviewed(ReviewSession session, List<Change> selected) {
+        return !selected.isEmpty() && selected.stream().allMatch(c -> session.cachedStatus(c) == ReviewSession.Status.REVIEWED);
     }
 
-    public static final class Unmark extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            List<VirtualFile> files = files(event);
-            boolean tracked = service != null && files.stream().anyMatch(service::isTracked);
-            event.getPresentation().setVisible(tracked);
-            event.getPresentation().setEnabled(tracked && service.canUnmark(files));
+    static void perform(ReviewSession session, List<Change> selected, Kind kind) {
+        if (!session.isActive()) return;
+        if (kind == Kind.RESET) {
+            String scope = session.scope();
+            int answer = Messages.showYesNoDialog(session.project(), "取消当前比较中所有文件的审阅标记？其他比较不受影响。",
+                    "ChangeLines", Messages.getQuestionIcon());
+            if (answer == Messages.YES && session.isActive() && scope.equals(session.scope())) session.unmark(session.changes());
+            return;
         }
-
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            if (service != null) service.unmarkReviewed(files(event));
+        if (kind == Kind.UNMARK || kind == Kind.TOGGLE && allReviewed(session, selected)) {
+            session.unmark(selected);
+            return;
         }
-    }
-
-    public static final class MarkNext extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            List<VirtualFile> files = files(event);
-            boolean enabled = service != null && files.size() == 1
-                    && service.isTracked(files.getFirst())
-                    && service.canMark(files);
-            event.getPresentation().setVisible(service != null && files.size() == 1
-                    && service.isTracked(files.getFirst()));
-            event.getPresentation().setEnabled(enabled);
-        }
-
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            List<VirtualFile> files = files(event);
-            if (service != null && files.size() == 1) service.markAndOpenNext(files.getFirst());
-        }
-    }
-
-    public static final class Next extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            boolean enabled = service != null && service.hasNextUnreviewed();
-            event.getPresentation().setEnabled(enabled);
-            event.getPresentation().setVisible(service != null && service.progress().changed() > 0);
-        }
-
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            if (service == null) return;
-            List<VirtualFile> files = files(event);
-            service.openNextUnreviewed(files.size() == 1 ? files.getFirst() : null);
-        }
-    }
-
-    public static final class Reset extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            boolean visible = service != null && service.progress().changed() > 0;
-            event.getPresentation().setVisible(visible);
-            event.getPresentation().setEnabled(visible && service.hasCurrentReviews());
-        }
-
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            if (service != null) service.resetReviews();
-        }
-    }
-
-    public static final class Progress extends Base {
-        @Override
-        public void update(@NotNull AnActionEvent event) {
-            ReviewService service = service(event);
-            if (service == null) {
-                event.getPresentation().setVisible(false);
+        if (kind == Kind.MARK || kind == Kind.MARK_NEXT || kind == Kind.TOGGLE) {
+            if (!session.mark(selected)) {
+                Messages.showInfoMessage(session.project(), "内容正在核对或无法读取，本次没有写入任何已审阅标记。请等待核对完成。", "ChangeLines");
                 return;
             }
-            ReviewService.Progress progress = service.progress();
-            event.getPresentation().setVisible(progress.changed() > 0);
-            event.getPresentation().setEnabled(false);
-            event.getPresentation().setText(progress.shortText());
-            event.getPresentation().setDescription(progress.description());
         }
+        if (kind == Kind.MARK_NEXT || kind == Kind.NEXT) {
+            Change next = session.nextAfter(selected.isEmpty() ? null : selected.getLast());
+            if (next != null) session.open(next);
+            else Messages.showInfoMessage(session.project(), "没有可继续的未审阅文件。二进制和无法读取的文件已跳过。", "ChangeLines");
+        }
+    }
 
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent event) {
-            // Informational toolbar item.
+    private static String text(Kind kind) {
+        return switch (kind) {
+            case MARK, TOGGLE -> "标记已审阅";
+            case UNMARK -> "取消已审阅";
+            case MARK_NEXT -> "审阅并下一个";
+            case NEXT -> "下一个未审阅";
+            case RESET -> "重置当前比较";
+        };
+    }
+
+    public abstract static class TreeAction extends DumbAwareAction {
+        private final Kind kind;
+        protected TreeAction(Kind kind) { this.kind = kind; }
+        @Override public @NotNull ActionUpdateThread getActionUpdateThread() { return ActionUpdateThread.EDT; }
+        @Override public void update(@NotNull AnActionEvent e) {
+            ReviewSession session = from(e.getData(PlatformDataKeys.CONTEXT_COMPONENT));
+            e.getPresentation().setEnabledAndVisible(session != null);
+            if (session != null) e.getPresentation().setEnabled(enabled(session, session.selected(), kind));
+        }
+        @Override public void actionPerformed(@NotNull AnActionEvent e) {
+            ReviewSession session = from(e.getData(PlatformDataKeys.CONTEXT_COMPONENT));
+            if (session != null) perform(session, session.selected(), kind);
+        }
+    }
+
+    public static final class Mark extends TreeAction { public Mark() { super(Kind.MARK); } }
+    public static final class Unmark extends TreeAction { public Unmark() { super(Kind.UNMARK); } }
+    public static final class MarkNext extends TreeAction { public MarkNext() { super(Kind.MARK_NEXT); } }
+    public static final class Next extends TreeAction { public Next() { super(Kind.NEXT); } }
+    public static final class Reset extends TreeAction { public Reset() { super(Kind.RESET); } }
+
+    private static final class SessionAction extends DumbAwareAction {
+        private final WeakReference<ReviewSession> reference;
+        private final Kind kind;
+        SessionAction(ReviewSession session, Kind kind) {
+            super(text(kind), "ChangeLines：操作此 Changes 列表的选择，不跟随其他窗口的焦点。", null);
+            reference = new WeakReference<>(session);
+            this.kind = kind;
+            getTemplatePresentation().putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, true);
+        }
+        @Override public @NotNull ActionUpdateThread getActionUpdateThread() { return ActionUpdateThread.EDT; }
+        @Override public void update(@NotNull AnActionEvent e) {
+            ReviewSession session = reference.get();
+            boolean active = session != null && session.isActive();
+            e.getPresentation().setEnabledAndVisible(active);
+            if (!active) return;
+            List<Change> selected = session.selected();
+            e.getPresentation().setEnabled(enabled(session, selected, kind));
+            if (kind == Kind.TOGGLE) e.getPresentation().setText(allReviewed(session, selected) ? "取消已审阅" : "标记已审阅");
+        }
+        @Override public void actionPerformed(@NotNull AnActionEvent e) {
+            ReviewSession session = reference.get();
+            if (session != null && session.isActive()) perform(session, session.selected(), kind);
+        }
+    }
+
+    private static final class ProgressAction extends DumbAwareAction {
+        private final WeakReference<ReviewSession> reference;
+        ProgressAction(ReviewSession session) {
+            reference = new WeakReference<>(session);
+            getTemplatePresentation().putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, true);
+        }
+        @Override public @NotNull ActionUpdateThread getActionUpdateThread() { return ActionUpdateThread.EDT; }
+        @Override public void update(@NotNull AnActionEvent e) {
+            ReviewSession session = reference.get();
+            boolean active = session != null && session.isActive();
+            e.getPresentation().setVisible(active);
+            e.getPresentation().setEnabled(false);
+            if (active) {
+                e.getPresentation().setText(session.progressText());
+                e.getPresentation().setDescription(session.progressDescription());
+            }
+        }
+        @Override public void actionPerformed(@NotNull AnActionEvent e) { }
+    }
+
+    static final class BoundAction extends DumbAwareAction {
+        private final WeakReference<ReviewSession> reference;
+        private final Change change;
+        private final String scope;
+        private final Kind kind;
+        BoundAction(ReviewSession session, Change change, Kind kind) {
+            super(text(kind), "ChangeLines：仅标记此 Diff 中的文件，不会标记其他窗口当前选中的文件。",
+                    kind == Kind.MARK_NEXT ? AllIcons.Actions.Forward : AllIcons.Actions.Checked);
+            reference = new WeakReference<>(session);
+            this.change = change;
+            this.scope = session.scope();
+            this.kind = kind;
+        }
+        private ReviewSession session() {
+            ReviewSession session = reference.get();
+            return session != null && session.contains(change) && scope.equals(session.scope()) ? session : null;
+        }
+        @Override public @NotNull ActionUpdateThread getActionUpdateThread() { return ActionUpdateThread.EDT; }
+        @Override public void update(@NotNull AnActionEvent e) {
+            ReviewSession session = session();
+            e.getPresentation().setEnabled(session != null && enabled(session, List.of(change), kind));
+            if (session != null && kind == Kind.TOGGLE) {
+                e.getPresentation().setText(session.cachedStatus(change) == ReviewSession.Status.REVIEWED ? "已审阅（点击取消）" : "标记已审阅");
+            }
+        }
+        @Override public void actionPerformed(@NotNull AnActionEvent e) {
+            ReviewSession session = session();
+            if (session != null) perform(session, List.of(change), kind);
         }
     }
 }

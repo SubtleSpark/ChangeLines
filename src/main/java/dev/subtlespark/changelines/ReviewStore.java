@@ -1,59 +1,65 @@
 package dev.subtlespark.changelines;
 
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
-import com.intellij.openapi.components.StoragePathMacros;
-import com.intellij.util.xmlb.XmlSerializerUtil;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
-@Service(Service.Level.PROJECT)
-@State(name = "ChangeLinesReviewStore", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
+/** Machine-local IDE settings, not a file in the project and not Settings Sync data. */
+@Service(Service.Level.APP)
+@State(name = "ChangeLinesReviews", storages = @Storage(value = "ChangeLinesReviews.xml", roamingType = RoamingType.DISABLED))
 public final class ReviewStore implements PersistentStateComponent<ReviewStore.Data> {
     public static final class Data {
-        public Map<String, String> reviewed = new HashMap<>();
+        public Map<String, String> reviewed = new TreeMap<>();
     }
 
-    private Data data = new Data();
+    private final Map<String, String> reviewed = new TreeMap<>();
+    private final Map<String, Map<String, String>> temporary = new TreeMap<>();
 
-    @Override
-    public synchronized @NotNull Data getState() {
-        return data;
+    public synchronized String fingerprint(String scope, String file) {
+        return records(scope).get(key(scope, file));
     }
 
-    @Override
-    public synchronized void loadState(@NotNull Data state) {
+    public synchronized void mark(String scope, String file, String fingerprint) {
+        if (!isHash(fingerprint)) throw new IllegalArgumentException("A verified content fingerprint is required");
+        records(scope).put(key(scope, file), fingerprint);
+    }
+
+    public synchronized void unmark(String scope, String file) {
+        records(scope).remove(key(scope, file));
+    }
+
+    synchronized void releaseTemporaryScope(String scope) {
+        temporary.remove(scope);
+    }
+
+    @Override public synchronized @NotNull Data getState() {
         Data copy = new Data();
-        XmlSerializerUtil.copyBean(state, copy);
-        if (copy.reviewed == null) copy.reviewed = new HashMap<>();
-        data = copy;
+        copy.reviewed.putAll(reviewed);
+        return copy;
     }
 
-    synchronized String fingerprint(String key) {
-        return data.reviewed.get(key);
+    @Override public synchronized void loadState(@NotNull Data data) {
+        reviewed.clear();
+        if (data.reviewed != null) data.reviewed.forEach((key, value) -> {
+            if (isHash(key) && isHash(value)) reviewed.put(key, value);
+        });
     }
 
-    synchronized boolean contains(String key) {
-        return data.reviewed.containsKey(key);
+    private Map<String, String> records(String scope) {
+        return scope.startsWith("temporary:") ? temporary.computeIfAbsent(scope, ignored -> new TreeMap<>()) : reviewed;
     }
 
-    synchronized void mark(String key, String fingerprint) {
-        data.reviewed.put(key, fingerprint);
+    private static String key(String scope, String file) {
+        return ReviewFingerprint.hash("ChangeLines.review.record.v1", scope, file);
     }
 
-    synchronized void unmark(String key) {
-        data.reviewed.remove(key);
-    }
-
-    synchronized void clearReviews() {
-        data.reviewed.clear();
-    }
-
-    synchronized int size() {
-        return data.reviewed.size();
+    private static boolean isHash(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
     }
 }

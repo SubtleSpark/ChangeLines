@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.subtlespark"
-version = "0.3.0"
+version = "0.3.1"
 
 repositories {
     mavenCentral()
@@ -18,7 +18,7 @@ repositories {
 dependencies {
     intellijPlatform {
         intellijIdea("2026.1")
-        bundledModule("intellij.platform.lang.impl")
+        bundledModule("intellij.platform.vcs.impl.shared")
         bundledModule("intellij.platform.vcs.impl")
         testFramework(TestFrameworkType.Platform)
     }

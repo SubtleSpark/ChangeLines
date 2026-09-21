@@ -3,61 +3,31 @@
     <name>ChangeLines</name>
     <vendor url="https://github.com/SubtleSpark">SubtleSpark</vendor>
     <description><![CDATA[
-        Adds review progress directly to IntelliJ IDEA Project View for local VCS changes.
-        Shows per-file added/removed line counts and review state, persists explicit review marks,
-        invalidates reviewed files when their content changes, and provides Review / Review & Next actions.
-        Uses Project View decorators, Action System, VCS/VFS APIs and project workspace state.
+        Shows added/removed line counts and review progress in native Changes trees,
+        especially the Changes Between branch/revision comparison tool window.
+        Compares the actual before/after revisions, including deleted files, without requiring local changes.
+        Explicit review controls use native IntelliJ action toolbars and the Diff viewer.
+        Review marks are local, comparison-scoped and validated against both revision contents.
     ]]></description>
-
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
     <dependencies>
-        <module name="intellij.platform.lang.impl"/>
+        <module name="intellij.platform.vcs.impl.shared"/>
         <module name="intellij.platform.vcs.impl"/>
     </dependencies>
-
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.subtlespark.changelines.ChangeLinesStartup"/>
-        <projectViewNodeDecorator implementation="dev.subtlespark.changelines.ChangeLinesProjectViewDecorator"/>
+        <diff.DiffExtension implementation="dev.subtlespark.changelines.ReviewDiffExtension"/>
     </extensions>
-
     <actions>
         <group id="ChangeLines.ReviewGroup" text="ChangeLines 审阅" popup="true">
-            <action id="ChangeLines.MarkReviewed"
-                    class="dev.subtlespark.changelines.ReviewActions$Mark"
-                    text="标记已审阅"/>
-            <action id="ChangeLines.UnmarkReviewed"
-                    class="dev.subtlespark.changelines.ReviewActions$Unmark"
-                    text="取消已审阅"/>
+            <action id="ChangeLines.MarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Mark" text="ChangeLines: 标记已审阅"/>
+            <action id="ChangeLines.UnmarkReviewed" class="dev.subtlespark.changelines.ReviewActions$Unmark" text="ChangeLines: 取消已审阅"/>
+            <action id="ChangeLines.MarkAndNext" class="dev.subtlespark.changelines.ReviewActions$MarkNext" text="ChangeLines: 标记并打开下一个未审阅文件"/>
+            <action id="ChangeLines.NextUnreviewed" class="dev.subtlespark.changelines.ReviewActions$Next" text="ChangeLines: 打开下一个未审阅文件"/>
             <separator/>
-            <action id="ChangeLines.MarkAndNext"
-                    class="dev.subtlespark.changelines.ReviewActions$MarkNext"
-                    text="标记并打开下一个未审阅文件"/>
-            <action id="ChangeLines.NextUnreviewed"
-                    class="dev.subtlespark.changelines.ReviewActions$Next"
-                    text="打开下一个未审阅文件"/>
-            <separator/>
-            <action id="ChangeLines.ResetReviews"
-                    class="dev.subtlespark.changelines.ReviewActions$Reset"
-                    text="全部取消审阅"/>
-            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <action id="ChangeLines.ResetReviews" class="dev.subtlespark.changelines.ReviewActions$Reset" text="ChangeLines: 重置当前比较的审阅记录"/>
             <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
         </group>
-
-        <action id="ChangeLines.Progress"
-                class="dev.subtlespark.changelines.ReviewActions$Progress"
-                text="审阅 0 / 0">
-            <add-to-group group-id="ProjectViewToolbar" anchor="first"/>
-        </action>
-        <action id="ChangeLines.ToolbarNext"
-                class="dev.subtlespark.changelines.ReviewActions$Next"
-                text="下一个未审阅">
-            <add-to-group group-id="ProjectViewToolbar" anchor="last"/>
-        </action>
-        <action id="ChangeLines.ToolbarReset"
-                class="dev.subtlespark.changelines.ReviewActions$Reset"
-                text="重置审阅">
-            <add-to-group group-id="ProjectViewToolbar" anchor="last"/>
-        </action>
     </actions>
 </idea-plugin>
