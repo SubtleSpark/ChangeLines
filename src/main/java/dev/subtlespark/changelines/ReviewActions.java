@@ -51,7 +51,7 @@ public final class ReviewActions {
         return switch (kind) {
             case MARK -> session.canMark(selected);
             case UNMARK -> session.hasMarks(selected);
-            case MARK_NEXT -> selected.size() == 1 && session.canMark(selected);
+            case MARK_NEXT -> !selected.isEmpty() && session.canMark(selected);
             case NEXT -> session.nextAfter(selected.isEmpty() ? null : selected.getLast()) != null;
             case TOGGLE -> !selected.isEmpty() && (allReviewed(session, selected) || session.canMark(selected));
             case RESET -> session.hasMarks(session.changes());
@@ -60,6 +60,24 @@ public final class ReviewActions {
 
     private static boolean allReviewed(ReviewSession session, List<Change> selected) {
         return !selected.isEmpty() && selected.stream().allMatch(c -> session.cachedStatus(c) == ReviewSession.Status.REVIEWED);
+    }
+
+    private static List<Change> selection(ReviewSession session, Kind kind) {
+        return switch (kind) {
+            case MARK, MARK_NEXT, TOGGLE -> session.selectedForReview();
+            default -> session.selected();
+        };
+    }
+
+    /** Tree/toolbar actions expand folders. Bound Diff actions deliberately bypass this. */
+    static void performSelected(ReviewSession session, Kind kind) {
+        List<Change> selected = selection(session, kind);
+        if (kind == Kind.TOGGLE && allReviewed(session, selected)) {
+            // Remove all marks in this selection, including old marks on now-unsupported files.
+            perform(session, session.selected(), Kind.UNMARK);
+        } else {
+            perform(session, selected, kind);
+        }
     }
 
     static void perform(ReviewSession session, List<Change> selected, Kind kind) {
@@ -105,11 +123,11 @@ public final class ReviewActions {
         @Override public void update(@NotNull AnActionEvent e) {
             ReviewSession session = from(e.getData(PlatformDataKeys.CONTEXT_COMPONENT));
             e.getPresentation().setEnabledAndVisible(session != null);
-            if (session != null) e.getPresentation().setEnabled(enabled(session, session.selected(), kind));
+            if (session != null) e.getPresentation().setEnabled(enabled(session, selection(session, kind), kind));
         }
         @Override public void actionPerformed(@NotNull AnActionEvent e) {
             ReviewSession session = from(e.getData(PlatformDataKeys.CONTEXT_COMPONENT));
-            if (session != null) perform(session, session.selected(), kind);
+            if (session != null) performSelected(session, kind);
         }
     }
 
@@ -134,13 +152,21 @@ public final class ReviewActions {
             boolean active = session != null && session.isActive();
             e.getPresentation().setEnabledAndVisible(active);
             if (!active) return;
-            List<Change> selected = session.selected();
+            List<Change> selected = selection(session, kind);
             e.getPresentation().setEnabled(enabled(session, selected, kind));
             if (kind == Kind.TOGGLE) e.getPresentation().setText(allReviewed(session, selected) ? "取消已审阅" : "标记已审阅");
+            if (session.foldersSelected()) {
+                int files = session.selected().size();
+                int skipped = files - session.selectedForReview().size();
+                e.getPresentation().setDescription("所选文件夹下 " + files + " 个变更文件（包括折叠子目录）；"
+                        + "批量标记时跳过 " + skipped + " 个不可审阅文件，仍在核对的文件不会被跳过。");
+            } else {
+                e.getPresentation().setDescription("ChangeLines：操作此 Changes 列表的选择，不跟随其他窗口的焦点。");
+            }
         }
         @Override public void actionPerformed(@NotNull AnActionEvent e) {
             ReviewSession session = reference.get();
-            if (session != null && session.isActive()) perform(session, session.selected(), kind);
+            if (session != null && session.isActive()) performSelected(session, kind);
         }
     }
 

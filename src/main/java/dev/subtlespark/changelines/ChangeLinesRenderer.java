@@ -38,11 +38,16 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
     @Override public Component getTreeCellRendererComponent(JTree tree, Object value, boolean selected,
             boolean expanded, boolean leaf, int row, boolean hasFocus) {
         Component component = delegate.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus);
-        if (!(value instanceof DefaultMutableTreeNode node) || !(node.getUserObject() instanceof Change change)) {
+        if (!(value instanceof DefaultMutableTreeNode node)) return component;
+        if (!(node.getUserObject() instanceof Change change)) {
+            appendFolder(tree, node, component);
             return component;
         }
         ContentRevision revision = change.getAfterRevision() != null ? change.getAfterRevision() : change.getBeforeRevision();
-        if (revision == null || revision.getFile().isDirectory()) return component;
+        if (revision == null || revision.getFile().isDirectory()) {
+            appendFolder(tree, node, component);
+            return component;
+        }
         SimpleColoredComponent label = findLabel(component);
         if (label == null) return component;
         LineStatsService.Result result = statistics.apply(change, isVisibleRow(tree, row));
@@ -62,6 +67,21 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
         String reviewed = reviewSuffix.apply(change, result);
         if (!reviewed.isEmpty()) label.append("  " + reviewed, SimpleTextAttributes.GRAYED_ATTRIBUTES);
         return component;
+    }
+
+    private static void appendFolder(JTree tree, DefaultMutableTreeNode node, Component component) {
+        if (!(tree.getClientProperty(ReviewSession.PROPERTY) instanceof ReviewSession session)) return;
+        FolderSummary summary = session.folderSummary(node);
+        if (summary == null || summary.files() == 0) return;
+        SimpleColoredComponent label = findLabel(component);
+        if (label == null) return;
+        if (summary.counted() > 0) {
+            label.append("  +" + summary.added(), ADDED);
+            label.append("  -" + summary.removed(), REMOVED);
+        }
+        // Never present a partial sum as a complete total or unknown statistics as zero.
+        String suffix = summary.suffix();
+        if (!suffix.isEmpty()) label.append("  " + suffix, SimpleTextAttributes.GRAYED_ATTRIBUTES);
     }
 
     private static boolean isVisibleRow(JTree tree, int row) {

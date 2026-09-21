@@ -47,6 +47,7 @@ final class ReviewSession implements Disposable {
     private final String temporaryScope = "temporary:" + UUID.randomUUID();
     private final Map<Change, Item> byChange = new IdentityHashMap<>();
     private final Map<Change, LineStatsService.Result> immutableResults = new IdentityHashMap<>();
+    private final Map<DefaultMutableTreeNode, FolderSummary> folderSummaries = new IdentityHashMap<>();
     private List<Item> items = List.of();
     private List<Change> changes = List.of();
     private String scope;
@@ -92,16 +93,63 @@ final class ReviewSession implements Disposable {
     List<Change> changes() { syncModel(); return changes; }
     ActionGroup toolbarActions() { return reviewGroup; }
 
+    /** Expand selected folders using the comparison model, including collapsed descendants.
+     * Iterating the canonical file list deduplicates overlapping parent/child selections and
+     * retains native tree order for Review & Next. No directory is read from disk. */
     List<Change> selected() {
         syncModel();
         ChangesTree tree = treeReference.get();
         if (!isActive() || tree == null || tree.getSelectionPaths() == null) return List.of();
+        TreePath[] paths = tree.getSelectionPaths();
         List<Change> selected = new ArrayList<>();
-        for (TreePath path : tree.getSelectionPaths()) {
-            if (path.getLastPathComponent() instanceof DefaultMutableTreeNode node
-                    && node.getUserObject() instanceof Change change && byChange.containsKey(change)) selected.add(change);
+        for (Item item : items) {
+            for (TreePath path : paths) {
+                if (path.isDescendant(item.path())) {
+                    selected.add(item.change());
+                    break;
+                }
+            }
         }
         return List.copyOf(selected);
+    }
+
+    boolean foldersSelected() {
+        syncModel();
+        ChangesTree tree = treeReference.get();
+        if (!isActive() || tree == null || tree.getSelectionPaths() == null) return false;
+        for (TreePath path : tree.getSelectionPaths()) {
+            if (path.getPathComponent(0) != tree.getModel().getRoot()) continue;
+            if (path.getLastPathComponent() instanceof DefaultMutableTreeNode node && node.getChildCount() > 0
+                    && !(node.getUserObject() instanceof Change change && byChange.containsKey(change))) return true;
+        }
+        return false;
+    }
+
+    /** Folder batches skip known unsupported files, not files still loading. Direct file
+     * selections and Diff actions retain strict all-or-nothing verification. */
+    List<Change> selectedForReview() {
+        List<Change> selected = selected();
+        return foldersSelected() ? selected.stream().filter(c -> cachedStatus(c) != Status.UNAVAILABLE).toList() : selected;
+    }
+
+    /** Renderer hot path: no traversal, loading or diff calculation. */
+    FolderSummary folderSummary(DefaultMutableTreeNode node) {
+        return !isActive() || dirty ? null : folderSummaries.get(node);
+    }
+
+    private void rebuildFolderSummaries() {
+        Map<DefaultMutableTreeNode, FolderSummary.Builder> totals = new IdentityHashMap<>();
+        for (Item item : items) {
+            var result = statistics(item.change(), false);
+            Status status = status(item.change(), result);
+            for (TreePath path = item.path().getParentPath(); path != null; path = path.getParentPath()) {
+                if (path.getLastPathComponent() instanceof DefaultMutableTreeNode node) {
+                    totals.computeIfAbsent(node, ignored -> new FolderSummary.Builder()).add(result, status);
+                }
+            }
+        }
+        folderSummaries.clear();
+        totals.forEach((node, total) -> folderSummaries.put(node, total.build()));
     }
 
     LineStatsService.Result statistics(Change change, boolean load) {
@@ -207,8 +255,13 @@ final class ReviewSession implements Disposable {
         tree.setSelectionPath(item.path());
         tree.scrollPathToVisible(item.path());
         SwingUtilities.invokeLater(() -> {
-            if (!contains(change) || !openingScope.equals(scope())
-                    || selected().stream().noneMatch(selected -> selected == change)) return;
+            if (!contains(change) || !openingScope.equals(scope())) return;
+            // Folder selection now expands to descendants for batch actions. Navigation still
+            // requires the exact file row: changing selection to a parent cancels a queued open.
+            TreePath selectedPath = tree.getSelectionPath();
+            if (tree.getSelectionCount() != 1 || selectedPath == null
+                    || !(selectedPath.getLastPathComponent() instanceof DefaultMutableTreeNode selectedNode)
+                    || selectedNode.getUserObject() != change) return;
             var handler = tree.getEnterKeyHandler();
             if (handler != null) handler.process(new KeyEvent(tree, KeyEvent.KEY_PRESSED,
                     System.currentTimeMillis(), 0, KeyEvent.VK_ENTER, '\n'));
@@ -250,15 +303,17 @@ final class ReviewSession implements Disposable {
         syncModel();
         if (fixedScope == null) scope = ReviewScope.resolve(treeReference.get(), changes, temporaryScope);
         installControls(treeReference.get());
-        // Queue bounded background work outside renderer/action update. Every file, including
-        // deleted/binary files, belongs to this comparison rather than the local working copy.
+        // This comparison's files, including collapsed and deleted ones, are loaded in
+        // bounded background work. Folder totals aggregate cached results only.
         for (Change change : changes) statistics(change, true);
+        rebuildFolderSummaries();
         if (toolbar != null) toolbar.updateActionsAsync();
     }
 
     private void syncModel() {
         if (!dirty || !isActive()) return;
         dirty = false;
+        folderSummaries.clear();
         ChangesTree tree = treeReference.get();
         List<Item> current = new ArrayList<>();
         byChange.clear();
@@ -288,7 +343,7 @@ final class ReviewSession implements Disposable {
         if (observedModel != null) observedModel.addTreeModelListener(modelListener);
     }
 
-    private void changed() { dirty = true; requestRefresh(); }
+    private void changed() { dirty = true; folderSummaries.clear(); requestRefresh(); }
     private void requestRefresh() {
         if (!disposed) ApplicationManager.getApplication().getService(ChangeLinesInstaller.class).requestRefresh();
     }
@@ -344,5 +399,6 @@ final class ReviewSession implements Disposable {
         changes = List.of();
         byChange.clear();
         immutableResults.clear();
+        folderSummaries.clear();
     }
 }
