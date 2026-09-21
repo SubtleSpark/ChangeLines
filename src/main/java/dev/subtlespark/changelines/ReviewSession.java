@@ -1,6 +1,7 @@
 package dev.subtlespark.changelines;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
@@ -89,7 +90,7 @@ final class ReviewSession implements Disposable {
     boolean isActive() { return !disposed && !project.isDisposed() && treeReference.get() != null; }
     boolean contains(Change change) { syncModel(); return isActive() && byChange.containsKey(change); }
     List<Change> changes() { syncModel(); return changes; }
-    DefaultActionGroup toolbarActions() { return reviewGroup; }
+    ActionGroup toolbarActions() { return reviewGroup; }
 
     List<Change> selected() {
         syncModel();
