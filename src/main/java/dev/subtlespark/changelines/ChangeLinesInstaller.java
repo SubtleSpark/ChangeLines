@@ -7,8 +7,10 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ui.ChangesTree;
 
+import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.event.ChangeListener;
 import javax.swing.tree.TreeCellRenderer;
 import java.awt.AWTEvent;
 import java.awt.Component;
@@ -44,7 +46,6 @@ public final class ChangeLinesInstaller implements Disposable {
         if (disposed || started || ApplicationManager.getApplication().isHeadlessEnvironment()) return;
         started = true;
         Toolkit.getDefaultToolkit().addAWTEventListener(hierarchyListener, AWTEvent.HIERARCHY_EVENT_MASK);
-        // Also cover windows that were constructed before the startup activity ran.
         for (Window window : Window.getWindows()) scan(window);
     }
 
@@ -142,7 +143,11 @@ public final class ChangeLinesInstaller implements Disposable {
         private final WeakReference<ChangesTree> treeReference;
         private final ReviewSession reviews;
         private final PropertyChangeListener rendererListener;
+        private final ChangeListener viewportListener = event -> viewportChanged();
         private ChangeLinesRenderer wrapper;
+        private JViewport viewport;
+        private int viewX = -1;
+        private int viewWidth = -1;
         private boolean updating;
 
         private Binding(ChangesTree tree) {
@@ -154,6 +159,7 @@ public final class ChangeLinesInstaller implements Disposable {
         private void wrap() {
             ChangesTree tree = treeReference.get();
             if (tree == null || tree.getProject().isDisposed()) return;
+            observeViewport(tree);
             TreeCellRenderer current = tree.getCellRenderer();
             if (current == null || current instanceof ChangeLinesRenderer) return;
             wrapper = new ChangeLinesRenderer(current, reviews::statistics, reviews::suffix);
@@ -162,10 +168,37 @@ public final class ChangeLinesInstaller implements Disposable {
             finally { updating = false; }
         }
 
+        private void observeViewport(ChangesTree tree) {
+            JViewport next = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, tree);
+            if (next == viewport) return;
+            if (viewport != null) viewport.removeChangeListener(viewportListener);
+            viewport = next;
+            viewX = -1;
+            viewWidth = -1;
+            if (viewport != null) {
+                viewport.addChangeListener(viewportListener);
+                viewportChanged();
+            }
+        }
+
+        private void viewportChanged() {
+            ChangesTree tree = treeReference.get();
+            if (viewport == null || tree == null) return;
+            int x = viewport.getViewPosition().x;
+            int width = viewport.getExtentSize().width;
+            if (x == viewX && width == viewWidth) return;
+            viewX = x;
+            viewWidth = width;
+            // Horizontal viewport blitting can otherwise copy a pinned suffix to the wrong X.
+            // This is a repaint only: no model replacement, width invalidation or statistics IO.
+            tree.repaint(tree.getVisibleRect());
+        }
+
         private void refresh() {
             ChangesTree tree = treeReference.get();
-            if (tree == null || !tree.isShowing() || tree.getProject().isDisposed()
-                    || wrapper == null || tree.getCellRenderer() != wrapper) return;
+            if (tree == null || tree.getProject().isDisposed()) return;
+            observeViewport(tree);
+            if (!tree.isShowing() || wrapper == null || tree.getCellRenderer() != wrapper) return;
             reviews.refresh();
             updating = true;
             try {
@@ -177,6 +210,8 @@ public final class ChangeLinesInstaller implements Disposable {
         }
 
         private void restore() {
+            if (viewport != null) viewport.removeChangeListener(viewportListener);
+            viewport = null;
             ChangesTree tree = treeReference.get();
             if (tree != null) {
                 tree.removePropertyChangeListener("cellRenderer", rendererListener);
