@@ -6,6 +6,12 @@
 
 最低 **IntelliJ IDEA 2026.1（261）**。CI 使用 2026.1 编译，验证 2026.1 和 2026.2.0.1；没有版本上限不代表已经验证全部未来版本。
 
+## 界面示意
+
+![ChangeLines 在 IDEA Changes 文件树中显示增删行数和审阅入口](docs/images/changes-tree-overview.webp)
+
+*示意图中的类名与路径均为通用示例。*
+
 ## 安装
 
 到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载最新发布的 **ChangeLines ZIP**。
