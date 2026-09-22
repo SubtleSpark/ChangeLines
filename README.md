@@ -8,11 +8,25 @@
 
 ## 安装
 
-到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载 **ChangeLines-0.3.2.zip**。
+到 [Releases](https://github.com/SubtleSpark/ChangeLines/releases/latest) 下载最新发布的 **ChangeLines ZIP**。
 
 IDEA → Settings → Plugins → 齿轮 → Install Plugin from Disk… → 选择 ZIP → 重启。
 
 不要解压 ZIP，不要下载 Source code，不需要自己装 JDK 或 Gradle。旧版直接覆盖更新。
+
+## 窄侧边栏显示（0.3.3）
+
+空间足够时保持原来的行内排列；文字超出侧边栏右边界时，统计区域才固定在右侧，长路径／文件名用省略号截断：
+
+```text
+空间足够：  ReleaseDAO.java  src/dal  +80  -33
+空间不足：  ReleaseDAO.java  strategyserv/src/…      +80  -33
+文件夹：    java/com/atta/strategy/…  +131  -40  已审阅 1 / 2
+```
+
+文件和文件夹使用同一规则，不要求开启目录分组。拖动侧边栏宽度会自动切换；水平滚动时仍以当前可见区域为准，保留原生复选框、图标、选中／文件背景与红绿颜色。
+
+特别窄时优先保留数字，尾部审阅说明可以省略，完整内容保留在 tooltip／无障碍名称中。如果宽度连复选框、图标和数字都容不下，仍需适当拓宽。这里只调整显示，不更改统计结果或审阅状态，也不会添加新设置项。
 
 ## 文件夹合计与批量审阅（0.3.2）
 

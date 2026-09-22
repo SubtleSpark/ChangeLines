@@ -14,11 +14,12 @@ import java.awt.Container;
 import java.awt.Rectangle;
 import java.util.function.BiFunction;
 
-/** Decorates the original component, preserving native icons, checkboxes and issue links. */
+/** Decorates native rows; an optional paint-time wrapper keeps overflowing statistics visible. */
 final class ChangeLinesRenderer implements TreeCellRenderer {
     final TreeCellRenderer delegate;
     private final BiFunction<Change, Boolean, LineStatsService.Result> statistics;
     private final BiFunction<Change, LineStatsService.Result, String> reviewSuffix;
+    private final ViewportPinnedCell pinnedCell = new ViewportPinnedCell();
     private static final SimpleTextAttributes ADDED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
             JBColor.namedColor("ChangeLines.added", new JBColor(0x247A38, 0x73B97B)));
     private static final SimpleTextAttributes REMOVED = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
@@ -39,17 +40,21 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
             boolean expanded, boolean leaf, int row, boolean hasFocus) {
         Component component = delegate.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus);
         if (!(value instanceof DefaultMutableTreeNode node)) return component;
-        if (!(node.getUserObject() instanceof Change change)) {
-            appendFolder(tree, node, component);
-            return component;
-        }
-        ContentRevision revision = change.getAfterRevision() != null ? change.getAfterRevision() : change.getBeforeRevision();
-        if (revision == null || revision.getFile().isDirectory()) {
-            appendFolder(tree, node, component);
-            return component;
-        }
         SimpleColoredComponent label = findLabel(component);
         if (label == null) return component;
+        int nativeFragments = label.getFragmentCount();
+        if (node.getUserObject() instanceof Change change) {
+            ContentRevision revision = change.getAfterRevision() != null ? change.getAfterRevision() : change.getBeforeRevision();
+            if (revision != null && !revision.getFile().isDirectory()) appendFile(tree, row, change, label);
+            else appendFolder(tree, node, label);
+        } else {
+            appendFolder(tree, node, label);
+        }
+        if (label.getFragmentCount() == nativeFragments) return component;
+        return pinnedCell.configure(tree, component, label, nativeFragments);
+    }
+
+    private void appendFile(JTree tree, int row, Change change, SimpleColoredComponent label) {
         LineStatsService.Result result = statistics.apply(change, isVisibleRow(tree, row));
         if (result.state() == LineStatsService.State.READY) {
             label.append("  +" + result.stats().added(), ADDED);
@@ -66,20 +71,16 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
         }
         String reviewed = reviewSuffix.apply(change, result);
         if (!reviewed.isEmpty()) label.append("  " + reviewed, SimpleTextAttributes.GRAYED_ATTRIBUTES);
-        return component;
     }
 
-    private static void appendFolder(JTree tree, DefaultMutableTreeNode node, Component component) {
+    private static void appendFolder(JTree tree, DefaultMutableTreeNode node, SimpleColoredComponent label) {
         if (!(tree.getClientProperty(ReviewSession.PROPERTY) instanceof ReviewSession session)) return;
         FolderSummary summary = session.folderSummary(node);
         if (summary == null || summary.files() == 0) return;
-        SimpleColoredComponent label = findLabel(component);
-        if (label == null) return;
         if (summary.counted() > 0) {
             label.append("  +" + summary.added(), ADDED);
             label.append("  -" + summary.removed(), REMOVED);
         }
-        // Never present a partial sum as a complete total or unknown statistics as zero.
         String suffix = summary.suffix();
         if (!suffix.isEmpty()) label.append("  " + suffix, SimpleTextAttributes.GRAYED_ATTRIBUTES);
     }
