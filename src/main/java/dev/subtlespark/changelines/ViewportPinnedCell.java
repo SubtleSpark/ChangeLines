@@ -46,7 +46,6 @@ final class ViewportPinnedCell extends JPanel {
     }
 
     Component configure(JTree tree, Component component, SimpleColoredComponent label, int nativeFragmentCount) {
-        // Standalone renderer measurements and expanded-item popups keep the natural text.
         JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, tree);
         if (viewport == null || viewport.getExtentSize().width <= 0
                 || !tree.getComponentOrientation().isLeftToRight() || label.isIconOnTheRight()) return component;
@@ -78,7 +77,7 @@ final class ViewportPinnedCell extends JPanel {
 
     @Override public void paint(Graphics g) {
         doLayout();
-        // Do not pin an expanded-item tooltip or a renderer painted outside this tree.
+        // Expanded-item popups painted outside this tree retain their natural full text.
         if (tree == null || !SwingUtilities.isDescendingFrom(this, tree)) {
             super.paint(g);
             return;
@@ -95,9 +94,7 @@ final class ViewportPinnedCell extends JPanel {
         if (suffixSpace <= 0) { super.paint(g); return; }
 
         prepareSuffix();
-        // Very narrow panes elide trailing review details before touching the numeric counts.
-        // The full native text and statistics remain in the tooltip/accessibility name.
-        elide(suffix, suffix.getFragmentCount(), suffixSpace);
+        fitSuffix(suffix, suffixSpace);
         int suffixWidth = suffix.getPreferredSize().width;
         if (suffixWidth > suffixSpace || suffix.getCharSequence(false).isEmpty()) {
             super.paint(g);
@@ -135,17 +132,40 @@ final class ViewportPinnedCell extends JPanel {
         suffix.setMyBorder(new EmptyBorder(inner.top, 0, inner.bottom, 0));
         Insets outer = label.getInsets();
         suffix.setBorder(new EmptyBorder(outer.top, 0, outer.bottom, 0));
+        boolean counts = fragments.size() >= nativeFragmentCount + 2
+                && fragments.get(nativeFragmentCount).text().stripLeading().startsWith("+")
+                && fragments.get(nativeFragmentCount + 1).text().stripLeading().startsWith("-");
         for (int i = nativeFragmentCount; i < fragments.size(); i++) {
             Fragment fragment = fragments.get(i);
             String text = i == nativeFragmentCount ? fragment.text().stripLeading() : fragment.text();
-            suffix.append(text, fragment.attributes());
+            suffix.append(text, fragment.attributes(), counts && i < nativeFragmentCount + 2);
         }
+    }
+
+    /** Keep some filename context instead of allowing a long review summary to consume the row. */
+    static void fitSuffix(SimpleColoredComponent suffix, int available) {
+        var iterator = suffix.iterator();
+        boolean counts = iterator.hasNext() && iterator.next().startsWith("+")
+                && iterator.hasNext() && iterator.next().stripLeading().startsWith("-");
+        int numericWidth = counts ? suffix.computePreferredSize(true).width : 0;
+        if (counts && numericWidth > available) {
+            // Do not show a misleading partial number such as +123… or -4….
+            suffix.clear();
+            suffix.append("…", SimpleTextAttributes.GRAYED_ATTRIBUTES);
+            return;
+        }
+        int budget = Math.min(available, Math.max(numericWidth, available - JBUI.scale(86)));
+        elide(suffix, suffix.getFragmentCount(), budget, counts ? 2 : 0);
     }
 
     /** End-elide in place without rebuilding fragments, so native attributes/tags/icons survive. */
     static void elide(SimpleColoredComponent component, int fragmentCount, int width) {
+        elide(component, fragmentCount, width, 0);
+    }
+
+    private static void elide(SimpleColoredComponent component, int fragmentCount, int width, int protectedFragments) {
         if (component.getPreferredSize().width <= width) return;
-        for (int i = fragmentCount - 1; i >= 0; i--) {
+        for (int i = fragmentCount - 1; i >= protectedFragments; i--) {
             var iterator = component.iterator(i);
             String text = iterator.next();
             if (text.isEmpty()) continue;
@@ -179,7 +199,7 @@ final class ViewportPinnedCell extends JPanel {
             JScrollBar bar = pane.getVerticalScrollBar();
             if (bar != null && bar.isVisible() && bar.getWidth() > 0) {
                 Rectangle bounds = SwingUtilities.convertRectangle(bar.getParent(), bar.getBounds(), tree);
-                // Standard scrollbars are outside the viewport; macOS overlay scrollbars may not be.
+                // Standard scrollbars are outside the viewport; macOS overlays may not be.
                 if (bounds.intersects(visible) && bounds.x > visible.x) right = Math.min(right, bounds.x);
             }
         }
