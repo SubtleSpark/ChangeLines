@@ -35,8 +35,6 @@ public final class ReviewActions {
         DefaultActionGroup group = new DefaultActionGroup();
         group.add(new ProgressAction(session));
         group.add(new SessionAction(session, Kind.TOGGLE));
-        group.add(new SessionAction(session, Kind.MARK_NEXT));
-        group.add(new SessionAction(session, Kind.NEXT));
         DefaultActionGroup more = new DefaultActionGroup("审阅", true);
         more.getTemplatePresentation().putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, true);
         more.add(new SessionAction(session, Kind.MARK));
