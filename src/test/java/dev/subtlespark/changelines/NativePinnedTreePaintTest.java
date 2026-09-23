@@ -1,5 +1,6 @@
 package dev.subtlespark.changelines;
 
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.changes.Change;
@@ -32,6 +33,20 @@ import java.util.concurrent.TimeUnit;
 
 /** Exercises the real TreeUI paint traversal, not just direct calls to our renderer. */
 public final class NativePinnedTreePaintTest extends LightPlatformTestCase {
+    private String savedSummaryPreference;
+
+    @Override protected void setUp() throws Exception {
+        super.setUp();
+        savedSummaryPreference = PropertiesComponent.getInstance(getProject()).getValue(FolderSummarySettings.KEY);
+        FolderSummarySettings.setVisible(getProject(), true);
+    }
+
+    @Override protected void tearDown() throws Exception {
+        try {
+            PropertiesComponent.getInstance(getProject()).setValue(FolderSummarySettings.KEY, savedSummaryPreference);
+        } finally { super.tearDown(); }
+    }
+
     public void testRealTreePaintResizesAndScrollsWithCheckboxesAndFolderSummary() throws Exception {
         Change longFile = change("ReleaseInstructionStateMachineExecutorWithAVeryLongNameForViewportRegression.txt");
         Change shortFile = change("A.txt");
@@ -71,6 +86,8 @@ public final class NativePinnedTreePaintTest extends LightPlatformTestCase {
             assertPinned(tree, viewport, new TreePath(longNode.getPath()), "native-tree-460");
             viewport.setViewPosition(new Point(90, 0));
             assertPinned(tree, viewport, new TreePath(longNode.getPath()), "native-tree-scrolled");
+            FolderSummarySettings.setVisible(getProject(), false);
+            assertPinned(tree, viewport, new TreePath(longNode.getPath()), "native-tree-folder-summary-off");
             assertSame(originalModel, tree.getModel());
             assertEquals(0, session.progress().reviewed());
             assertEquals(2, session.progress().total());

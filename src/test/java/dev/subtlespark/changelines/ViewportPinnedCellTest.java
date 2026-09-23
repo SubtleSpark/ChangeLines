@@ -1,5 +1,6 @@
 package dev.subtlespark.changelines;
 
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.changes.Change;
@@ -156,6 +157,8 @@ public final class ViewportPinnedCellTest extends LightPlatformTestCase {
     }
 
     public void testNativeFileAndFolderRowsBothPinWithoutChangingReviewState() throws Exception {
+        PropertiesComponent properties = PropertiesComponent.getInstance(getProject());
+        String previousPreference = properties.getValue(FolderSummarySettings.KEY);
         Change change = new Change(revision("old\n"), revision("new\nextra\n"));
         ChangesTree tree = new ChangesTree(getProject(), true, false) {
             @Override public void rebuildTree() { }
@@ -171,6 +174,7 @@ public final class ViewportPinnedCellTest extends LightPlatformTestCase {
         var installer = ApplicationManager.getApplication().getService(ChangeLinesInstaller.class);
         installer.attach(tree);
         try {
+            FolderSummarySettings.setVisible(getProject(), true);
             ReviewSession session = installer.sessionFor(change);
             assertNotNull(session);
             await(session, change);
@@ -197,9 +201,16 @@ public final class ViewportPinnedCellTest extends LightPlatformTestCase {
             save("native-folder", folderImage);
             assertTrue("Native folder counts were clipped", pixels(folderImage, added).width > 0);
             assertEquals(full, label.getCharSequence(false).toString());
+            FolderSummarySettings.setVisible(getProject(), false);
+            Component hidden = tree.getCellRenderer().getTreeCellRendererComponent(tree, folder, false, false, false, 1, false);
+            assertFalse(hidden instanceof ViewportPinnedCell);
+            assertFalse(findLabel(hidden).getCharSequence(false).toString().contains("  +2"));
             assertEquals(ReviewSession.Status.REVIEWED, session.status(change));
             assertEquals(1, session.progress().reviewed());
-        } finally { installer.detach(tree); }
+        } finally {
+            installer.detach(tree);
+            properties.setValue(FolderSummarySettings.KEY, previousPreference);
+        }
     }
 
     public void testViewportListenersAreRemovedOnDetach() {

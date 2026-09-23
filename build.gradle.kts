@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.subtlespark"
-version = "0.3.3"
+version = "0.3.4"
 
 repositories {
     mavenCentral()

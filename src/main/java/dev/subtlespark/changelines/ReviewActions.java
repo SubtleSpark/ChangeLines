@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.openapi.project.DumbAwareToggleAction;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ui.ChangesTree;
@@ -41,9 +42,38 @@ public final class ReviewActions {
         more.add(new SessionAction(session, Kind.MARK));
         more.add(new SessionAction(session, Kind.UNMARK));
         more.addSeparator();
+        more.add(new FolderSummaryToggleAction(session));
+        more.addSeparator();
         more.add(new SessionAction(session, Kind.RESET));
         group.add(more);
         return group;
+    }
+
+    private static final class FolderSummaryToggleAction extends DumbAwareToggleAction {
+        private final WeakReference<ReviewSession> reference;
+
+        FolderSummaryToggleAction(ReviewSession session) {
+            super("显示文件夹汇总", "显示文件夹的增删合计和子文件审阅进度；关闭不影响文件统计或批量审阅。", null);
+            reference = new WeakReference<>(session);
+        }
+
+        @Override public @NotNull ActionUpdateThread getActionUpdateThread() { return ActionUpdateThread.EDT; }
+
+        @Override public boolean isSelected(@NotNull AnActionEvent e) {
+            ReviewSession session = reference.get();
+            return session != null && session.isActive() && FolderSummarySettings.isVisible(session.project());
+        }
+
+        @Override public void setSelected(@NotNull AnActionEvent e, boolean state) {
+            ReviewSession session = reference.get();
+            if (session != null && session.isActive()) FolderSummarySettings.setVisible(session.project(), state);
+        }
+
+        @Override public void update(@NotNull AnActionEvent e) {
+            super.update(e);
+            ReviewSession session = reference.get();
+            e.getPresentation().setEnabledAndVisible(session != null && session.isActive());
+        }
     }
 
     static boolean enabled(ReviewSession session, List<Change> selected, Kind kind) {
