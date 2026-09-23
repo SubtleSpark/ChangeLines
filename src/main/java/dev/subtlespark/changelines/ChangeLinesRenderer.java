@@ -75,6 +75,7 @@ final class ChangeLinesRenderer implements TreeCellRenderer {
 
     private static void appendFolder(JTree tree, DefaultMutableTreeNode node, SimpleColoredComponent label) {
         if (!(tree.getClientProperty(ReviewSession.PROPERTY) instanceof ReviewSession session)) return;
+        if (!FolderSummarySettings.isVisible(session.project())) return;
         FolderSummary summary = session.folderSummary(node);
         if (summary == null || summary.files() == 0) return;
         if (summary.counted() > 0) {

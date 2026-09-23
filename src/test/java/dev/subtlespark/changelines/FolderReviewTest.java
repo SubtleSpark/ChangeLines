@@ -1,8 +1,11 @@
 package dev.subtlespark.changelines;
 
+import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.changes.Change;
@@ -39,22 +42,28 @@ public final class FolderReviewTest extends LightPlatformTestCase {
     private ReviewStore store;
     private ReviewStore.Data saved;
     private ChangeLinesInstaller installer;
+    private String savedSummaryPreference;
 
     @Override protected void setUp() throws Exception {
         super.setUp();
         store = ApplicationManager.getApplication().getService(ReviewStore.class);
         saved = store.getState();
         installer = ApplicationManager.getApplication().getService(ChangeLinesInstaller.class);
+        PropertiesComponent properties = PropertiesComponent.getInstance(getProject());
+        savedSummaryPreference = properties.getValue(FolderSummarySettings.KEY);
+        properties.unsetValue(FolderSummarySettings.KEY);
     }
 
     @Override protected void tearDown() throws Exception {
         try {
             attached.forEach(installer::detach);
             store.loadState(saved);
+            PropertiesComponent.getInstance(getProject()).setValue(FolderSummarySettings.KEY, savedSummaryPreference);
         } finally { super.tearDown(); }
     }
 
     public void testNestedCollapsedFoldersSumAddsDeletesAndPreserveNativeRows() {
+        FolderSummarySettings.setVisible(getProject(), true);
         Fixture f = normal();
         ready(f);
         f.tree().collapsePath(path(f.main()));
@@ -164,6 +173,7 @@ public final class FolderReviewTest extends LightPlatformTestCase {
     }
 
     public void testEntirelyUnsupportedFolderDoesNotDisplayZeroStatsOrReviewed() {
+        FolderSummarySettings.setVisible(getProject(), true);
         Fixture f = fixture(change("main/A.txt", "a", "\0"),
                 change("main/nested/B.txt", null, "b"), change("main/nested/C.txt", "\0", "a"));
         ready(f);
@@ -180,6 +190,7 @@ public final class FolderReviewTest extends LightPlatformTestCase {
     }
 
     public void testPendingChildIsNotSkippedAndPreventsPartialBatchApproval() {
+        FolderSummarySettings.setVisible(getProject(), true);
         CountDownLatch release = new CountDownLatch(1);
         Change delayed = new Change(null, revision(file("main/nested/Delayed.txt"), () -> {
             try {
@@ -232,6 +243,11 @@ public final class FolderReviewTest extends LightPlatformTestCase {
         assertEquals(2, summary.reviewed());
         assertEquals(1, summary.stale());
         assertTrue(summary.suffix().contains("需重审 1"));
+        assertFalse(render(f, f.main()).contains("需重审"));
+        assertTrue(render(f, node(f, live)).contains("需重审"));
+        FolderSummarySettings.setVisible(getProject(), true);
+        assertTrue(render(f, f.main()).contains("  +4  -3"));
+        assertTrue(render(f, f.main()).contains("需重审 1"));
         ReviewActions.performSelected(f.session(), ReviewActions.Kind.MARK);
         assertEquals("已审阅", f.session().folderSummary(f.main()).suffix());
     }
@@ -255,6 +271,7 @@ public final class FolderReviewTest extends LightPlatformTestCase {
     }
 
     public void testPaintingAndToolbarUpdatesUseCachedSummariesWithoutRevisionIo() {
+        FolderSummarySettings.setVisible(getProject(), true);
         AtomicInteger reads = new AtomicInteger();
         AtomicBoolean readOnEdt = new AtomicBoolean();
         Supplier<String> content = () -> {
@@ -295,6 +312,114 @@ public final class FolderReviewTest extends LightPlatformTestCase {
         builder.add(result, ReviewSession.Status.UNREVIEWED);
         assertEquals(2L * Integer.MAX_VALUE, builder.build().added());
         assertEquals(2L * Integer.MAX_VALUE, builder.build().removed());
+    }
+
+    public void testSummaryIsHiddenByDefaultButFilesAndFolderBatchReviewStillWork() {
+        Fixture f = normal();
+        ready(f);
+        assertFalse(FolderSummarySettings.isVisible(getProject()));
+        assertEquals(nativeText(f, f.main()), render(f, f.main()));
+        assertEquals(nativeText(f, f.nested()), render(f, f.nested()));
+        assertEquals(nativeText(f, f.root()), render(f, f.root()));
+        assertTrue(render(f, node(f, f.inside().getFirst())).contains("  +2  -0"));
+        select(f, f.main());
+        AnAction review = toolbar(f, 1);
+        assertEnabled(review, true);
+        review.actionPerformed(event(review));
+        assertEquals(3, f.session().progress().reviewed());
+        assertTrue(render(f, node(f, f.inside().getFirst())).contains("已审阅"));
+        assertEquals(nativeText(f, f.main()), render(f, f.main()));
+        assertEquals(ReviewSession.Status.UNREVIEWED, f.session().status(f.outside()));
+        review.actionPerformed(event(review));
+        assertEquals(0, f.session().progress().reviewed());
+    }
+
+    public void testNativeMenuToggleChangesOnlyFolderPresentation() {
+        Fixture f = normal();
+        ready(f);
+        select(f, f.main());
+        ToggleAction toggle = summaryToggle(f.session());
+        assertEnabled(toggle, true);
+        assertFalse(toggle.isSelected(event(toggle)));
+        var model = f.tree().getModel();
+        var selection = f.tree().getSelectionPath();
+        var marks = store.getState().reviewed;
+        String fileText = render(f, node(f, f.inside().getFirst()));
+        for (int i = 0; i < 3; i++) {
+            toggle.actionPerformed(event(toggle));
+            assertTrue(toggle.isSelected(event(toggle)));
+            assertEquals("true", PropertiesComponent.getInstance(getProject()).getValue(FolderSummarySettings.KEY));
+            String text = render(f, f.main());
+            assertTrue(text, text.contains("  +3  -3"));
+            assertTrue(text, text.contains("已审阅 0 / 3"));
+            assertEquals(text.indexOf("  +3"), text.lastIndexOf("  +3"));
+            toggle.actionPerformed(event(toggle));
+            assertFalse(toggle.isSelected(event(toggle)));
+            assertFalse(PropertiesComponent.getInstance(getProject()).isValueSet(FolderSummarySettings.KEY));
+            assertEquals(nativeText(f, f.main()), render(f, f.main()));
+            assertEquals(fileText, render(f, node(f, f.inside().getFirst())));
+        }
+        assertSame(model, f.tree().getModel());
+        assertEquals(selection, f.tree().getSelectionPath());
+        assertEquals(marks, store.getState().reviewed);
+        assertEquals(0, f.session().progress().reviewed());
+    }
+
+    public void testSummaryPreferenceIsSharedAndSurvivesRecreatingComparison() {
+        Fixture first = normal();
+        Fixture second = normal();
+        ready(first);
+        ready(second);
+        ToggleAction one = summaryToggle(first.session());
+        ToggleAction two = summaryToggle(second.session());
+        one.actionPerformed(event(one));
+        assertTrue(two.isSelected(event(two)));
+        assertTrue(render(second, second.main()).contains("  +3  -3"));
+        installer.detach(first.tree());
+        installer.attach(first.tree());
+        ReviewSession reopened = (ReviewSession) first.tree().getClientProperty(ReviewSession.PROPERTY);
+        assertNotSame(first.session(), reopened);
+        assertTrue(summaryToggle(reopened).isSelected(event(one)));
+        two.actionPerformed(event(two));
+        assertFalse(summaryToggle(reopened).isSelected(event(one)));
+    }
+
+    public void testSummaryToggleIsAvailableWithoutSelectingFiles() {
+        Fixture f = normal();
+        f.tree().clearSelection();
+        ToggleAction toggle = summaryToggle(f.session());
+        assertEnabled(toolbar(f, 1), false);
+        assertEnabled(toggle, true);
+        toggle.actionPerformed(event(toggle));
+        assertTrue(FolderSummarySettings.isVisible(getProject()));
+        assertEquals(0, f.session().progress().reviewed());
+    }
+
+    public void testClosedComparisonToggleCannotChangePreference() {
+        Fixture f = normal();
+        ToggleAction toggle = summaryToggle(f.session());
+        installer.detach(f.tree());
+        assertEnabled(toggle, false);
+        toggle.setSelected(event(toggle), true);
+        assertFalse(FolderSummarySettings.isVisible(getProject()));
+    }
+
+    private static ToggleAction summaryToggle(ReviewSession session) {
+        for (AnAction action : session.toolbarActions().getChildren(null)) {
+            if (action instanceof ActionGroup group) {
+                for (AnAction child : group.getChildren(null)) {
+                    if (child instanceof ToggleAction toggle
+                            && "显示文件夹汇总".equals(child.getTemplatePresentation().getText())) return toggle;
+                }
+            }
+        }
+        throw new AssertionError("Folder summary toggle is missing from the Review menu");
+    }
+
+    private static String nativeText(Fixture f, DefaultMutableTreeNode node) {
+        var wrapper = (ChangeLinesRenderer) f.tree().getCellRenderer();
+        Component component = wrapper.delegate.getTreeCellRendererComponent(f.tree(), node, false, false, false, 0, false);
+        return label(component).getCharSequence(false).toString();
     }
 
     private Fixture normal() {
