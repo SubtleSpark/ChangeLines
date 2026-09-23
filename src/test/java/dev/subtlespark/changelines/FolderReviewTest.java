@@ -90,6 +90,20 @@ public final class FolderReviewTest extends LightPlatformTestCase {
         }
     }
 
+    public void testPrimaryToolbarKeepsOnlyProgressMarkAndReviewMenu() {
+        Fixture f = normal();
+        AnAction[] actions = f.session().toolbarActions().getChildren(null);
+        assertEquals(3, actions.length);
+        assertEquals("标记已审阅", actions[1].getTemplatePresentation().getText());
+        assertTrue(actions[2] instanceof ActionGroup);
+        assertEquals("审阅", actions[2].getTemplatePresentation().getText());
+        for (AnAction action : actions) {
+            String text = action.getTemplatePresentation().getText();
+            assertFalse("审阅并下一个".equals(text));
+            assertFalse("下一个未审阅".equals(text));
+        }
+    }
+
     public void testFolderToolbarMarksAllDescendantsAndToggleCancelsWithoutTouchingSibling() {
         Fixture f = normal();
         ready(f);
@@ -132,9 +146,7 @@ public final class FolderReviewTest extends LightPlatformTestCase {
         assertEquals(f.inside().subList(1, 3), f.session().selected());
         AtomicInteger opened = new AtomicInteger();
         f.tree().setDoubleClickAndEnterKeyHandler(opened::incrementAndGet);
-        AnAction next = toolbar(f, 2);
-        assertEnabled(next, true);
-        next.actionPerformed(event(next));
+        ReviewActions.performSelected(f.session(), ReviewActions.Kind.MARK_NEXT);
         UIUtil.dispatchAllInvocationEvents();
         assertEquals(List.of(f.outside()), f.session().selected());
         assertEquals(1, opened.get());
